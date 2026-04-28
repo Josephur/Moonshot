@@ -161,11 +161,14 @@ def render_moon_disk_with_texture(
     tint_rgb: Tuple[float, float, float],
     pixel_radius: int,
     texture: Optional[np.ndarray],
+    parallactic_angle_deg: float = 0.0,
 ) -> Image.Image:
     """Render the Moon disk with real surface texture and correct phase.
 
     Uses an equirectangular lunar surface texture mapped via orthographic
-    projection.  Lighting applies the atmospheric *tint* on the lit side
+    projection, rotated by *parallactic_angle_deg* so that surface
+    features appear correctly oriented for the observer's latitude.
+    Lighting applies the atmospheric *tint* on the lit side
     and a subtle blue-green earthshine on the dark side, with a smooth
     terminator blend and limb darkening.
 
@@ -181,6 +184,10 @@ def render_moon_disk_with_texture(
         pixel_radius: Moon disk radius in pixels.
         texture: ``(H, W, 3)`` uint8 equirectangular texture array, or
             ``None`` to fall back to the standard flat-colour disk.
+        parallactic_angle_deg: Parallactic angle in degrees.  The moon
+            texture is rotated by this angle so that surface features
+            appear correctly oriented for the observer's latitude.
+            Default 0.0 (northern hemisphere / equator).
 
     Returns:
         A ``(2 * pixel_radius, 2 * pixel_radius)`` RGBA image with
@@ -215,14 +222,29 @@ def render_moon_disk_with_texture(
     px = dx.astype(np.float64) / pixel_radius
     py = dy.astype(np.float64) / pixel_radius
 
+    # --- Texture rotation for observer latitude ---
+    # Rotate the (px, py) coordinates by the parallactic angle so that
+    # the moon's surface features appear correctly oriented for the
+    # observer's hemisphere (southern hemisphere → upside-down relative
+    # to northern).
+    if parallactic_angle_deg != 0.0:
+        q = math.radians(parallactic_angle_deg)
+        cos_q = math.cos(q)
+        sin_q = math.sin(q)
+        px_tex = px * cos_q - py * sin_q
+        py_tex = px * sin_q + py * cos_q
+    else:
+        px_tex = px
+        py_tex = py
+
     # --- Orthographic projection ---
     # Compute latitude and longitude for each pixel
-    # lat = arcsin(py)
-    # lon = atan2(px, sqrt(1 - px² - py²))
-    lat = np.arcsin(np.clip(py, -1.0, 1.0))
-    sq = px ** 2 + py ** 2
+    # lat = arcsin(py_tex)
+    # lon = atan2(px_tex, sqrt(1 - px_tex² - py_tex²))
+    lat = np.arcsin(np.clip(py_tex, -1.0, 1.0))
+    sq = px_tex ** 2 + py_tex ** 2
     sqrt_term = np.sqrt(np.clip(1.0 - sq, 0.0, 1.0))
-    lon = np.arctan2(px, sqrt_term)
+    lon = np.arctan2(px_tex, sqrt_term)
 
     # --- Phase (terminator) ---
     theta = math.radians(terminator_angle_deg)
