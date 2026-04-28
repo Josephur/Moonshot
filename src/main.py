@@ -217,15 +217,22 @@ def main():
     fraction = compute_moon_phase(jd)
     phase = phase_name(fraction)
 
-    # ---- 6. Calculate atmospheric data (placeholder) -------------------------
-    # The atmosphere module will be built by another component.
-    # For now we pass the weather data directly.
-
-    # ---- 7. Render pipeline (placeholder) -----------------------------------
+    # ---- 5b. Auto-calculate FOV if not specified ------------------------------
+    # Default: make the moon ~150px wide for a satisfying visual.
+    # Moon angular diameter is ~0.5°, so FOV = ang_diam * img_width / target_px
+    from moon.timeconv import julian_date as _jd
+    from moon.position import moon_position as _moon_pos
+    import math as _math
+    _moon_ra, _moon_dec, _moon_dist = _moon_pos(jd)
+    _moon_radius_km = 1737.4
+    _ang_diam = _math.degrees(2.0 * _math.atan(_moon_radius_km / _moon_dist))
+    _target_moon_px = args.width // 12 if args.width else 160  # ~8% of image width
+    _auto_fov = max(_ang_diam * (args.width or 1920) / _target_moon_px, _ang_diam * 2)
+    
     config = Config(
         image_width=args.width or 1920,
         image_height=args.height or 1080,
-        fov_deg=args.fov or 90,
+        fov_deg=args.fov or _auto_fov,
         output_dir="output",
     )
     output_path = args.output or "moon.png"

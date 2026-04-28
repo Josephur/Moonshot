@@ -167,9 +167,11 @@ def generate_moon_image(
         moon_radius_px,
     )
 
-    # Position on image
+    # Position on image — center the moon when using a narrow FOV (telephoto-style)
+    _center_moon = fov_deg < 20.0
     moon_x, moon_y = moon_position_on_image(
         moon_app_alt, moon_az, fov_deg, image_w, image_h,
+        center_on_moon=_center_moon,
     )
 
     # Composite moon onto sky

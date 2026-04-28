@@ -159,20 +159,22 @@ def moon_position_on_image(altitude_deg: float,
                            azimuth_deg: float,
                            fov_deg: float,
                            image_width: int,
-                           image_height: int) -> Tuple[int, int]:
+                           image_height: int,
+                           center_on_moon: bool = False) -> Tuple[int, int]:
     """Compute the pixel position of the moon centre on the image.
 
     Coordinate mapping:
 
-    * Altitude 0°  →  horizon (bottom of image)
-    * Altitude 90° → zenith (top-centre of image, constrained by FOV)
+    * Altitude 0°  →  horizon (bottom of image), unless *center_on_moon*
+      is True, in which case the moon is placed at the vertical centre
+      and the FOV determines the sky visible above and below it.
+    * Altitude 90° → zenith (top-centre of image, constrained by FOV).
     * Azimuth is mapped horizontally within the field of view.
 
     The azimuth mapping is centred so that the middle of the FOV
     corresponds to the direction the viewer is facing.  By default this
     function assumes the viewer faces the moon's azimuth direction
-    (i.e., the moon is horizontally centred).  Pure horizontal
-    placement is computed from a "viewer direction" at the image centre.
+    (i.e., the moon is horizontally centred).
 
     Args:
         altitude_deg: Apparent altitude of the moon in degrees (0 = horizon).
@@ -181,6 +183,10 @@ def moon_position_on_image(altitude_deg: float,
         fov_deg: Field of view in degrees.
         image_width: Image width in pixels.
         image_height: Image height in pixels.
+        center_on_moon: When True, the moon is placed at the vertical centre
+                        of the image and the FOV determines the visible
+                        sky above/below it.  Use this for telephoto-style
+                        close-up moon shots.
 
     Returns:
         ``(x, y)`` pixel coordinates for the moon centre.
@@ -191,14 +197,14 @@ def moon_position_on_image(altitude_deg: float,
         raise ValueError(f"Image dimensions must be positive, got ({image_width}, {image_height})")
 
     # --- Vertical placement ---
-    # Map altitude linearly: 0° → bottom, 90° → top (but limited by FOV).
-    # The FOV spans from horizon (bottom) upward.
-    # full_height_deg = fov_deg (the sky portion shown)
-    # altitude_deg / fov_deg gives the fraction from bottom
-    alt_fraction = altitude_deg / fov_deg
-    y = int(round(image_height * (1.0 - alt_fraction)))
-    # Clamp to image bounds
-    y = max(0, min(image_height - 1, y))
+    if center_on_moon:
+        # Place moon at vertical centre; sky above/below within FOV
+        y = image_height // 2
+    else:
+        # Map altitude linearly: 0° → bottom, 90° → top
+        alt_fraction = altitude_deg / fov_deg
+        y = int(round(image_height * (1.0 - alt_fraction)))
+        y = max(0, min(image_height - 1, y))
 
     # --- Horizontal placement ---
     # By default place the moon in the centre horizontally.
