@@ -46,7 +46,9 @@ def julian_date(year: float, month: float, day: float,
           + np.floor(y / 400.0)
           - 32045.0)
 
-    return float(jd)
+    # Subtract 0.5 to convert from midnight-based to noon-based JD
+    # (Julian Day starts at 12:00 TT, not 00:00)
+    return float(jd - 0.5)
 
 
 def gmst(jd: float) -> float:

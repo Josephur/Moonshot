@@ -15,9 +15,9 @@ import sys
 from datetime import datetime, timezone, timedelta
 from typing import Optional
 
-from .config import Config, get_api_key
-from .location.geocode import from_zip, from_city_state, from_lat_lon, Location
-from .weather.provider import fetch_weather, default_weather
+from config import Config, get_api_key
+from location.geocode import from_zip, from_city_state, from_lat_lon, Location
+from weather.provider import fetch_weather, default_weather
 
 
 def build_parser() -> argparse.ArgumentParser:

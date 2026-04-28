@@ -11,7 +11,7 @@ from typing import Optional
 
 from geopy.geocoders import Nominatim
 
-from .timezone import timezone_at
+from . import timezone as _timezone
 
 # Named tuple returned by all resolve functions.
 Location = namedtuple(
@@ -46,7 +46,7 @@ def from_zip(zip_code: str) -> Optional[Location]:
         address = loc.raw.get("address", {})
         city = address.get("city") or address.get("town") or address.get("village", "")
         state = address.get("state", "")
-        tz = timezone_at(lat, lon)
+        tz = _timezone.timezone_at(lat, lon)
 
         return Location(lat, lon, city, state, zip_code, tz)
     except Exception as exc:
@@ -73,7 +73,7 @@ def from_city_state(city: str, state: str) -> Optional[Location]:
             return None
 
         lat, lon = loc.latitude, loc.longitude
-        tz = timezone_at(lat, lon)
+        tz = _timezone.timezone_at(lat, lon)
 
         return Location(lat, lon, city, state, "", tz)
     except Exception as exc:
@@ -99,7 +99,7 @@ def from_lat_lon(lat: float, lon: float) -> Optional[Location]:
         print(f"Warning: coordinates ({lat}, {lon}) are out of range")
         return None
 
-    tz = timezone_at(lat, lon)
+    tz = _timezone.timezone_at(lat, lon)
     return Location(lat, lon, "", "", "", tz)
 
 

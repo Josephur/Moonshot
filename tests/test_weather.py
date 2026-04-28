@@ -99,9 +99,12 @@ class TestFetchWeather:
         })
         mock_get.return_value = mock_resp
 
-        # Should fail on missing 'weather' list
+        # Should gracefully default missing fields
         w = fetch_weather(39.7, -86.2, "test-key")
-        assert w is None
+        assert w is not None
+        assert w.temp_c == 20.0
+        assert w.conditions == "unknown"
+        assert w.pressure_mbar == 1013.0  # default
 
     @patch("weather.provider.requests.get")
     def test_fetch_weather_calls_correct_url(self, mock_get):
