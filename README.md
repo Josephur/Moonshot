@@ -61,6 +61,19 @@ python -m src.main --help
 | `--output` | Output filename | moon_<timestamp>.png |
 | `--weather-api-key` | OpenWeatherMap API key | `MOONSHOT_WEATHER_API_KEY` env |
 
+## Updating Gallery Images
+
+Whenever rendering code changes, regenerate the gallery before committing:
+
+```bash
+python -m src.main --zip 10001 --output output/gallery/moonshot_new_york_city.png
+python -m src.main --zip 90001 --output output/gallery/moonshot_los_angeles.png
+python -m src.main --city Chicago --state IL --output output/gallery/moonshot_chicago.png
+python -m src.main --city Indianapolis --state IN --output output/gallery/moonshot_indianapolis.png
+python -m src.main --city Miami --state FL --output output/gallery/moonshot_miami.png
+python -m src.main --city Denver --state CO --output output/gallery/moonshot_denver.png
+```
+
 ## Technical Details
 
 - **Moon position:** IAU-standard algorithms via ELP2000-82 analytical lunar ephemeris
