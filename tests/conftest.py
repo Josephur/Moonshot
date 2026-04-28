@@ -68,8 +68,9 @@ def ask_with_retry(image_path: str | Path, prompt: str, retries: int = 2) -> str
 
 
 def check_yes(response: str) -> bool:
-    """Return True if response contains YES (case-insensitive)."""
-    return "YES" in response.upper()
+    """Return True if response starts with Yes/yes or similar affirmation."""
+    upper = response.strip().upper()
+    return upper.startswith("YES") or "YES," in upper or upper.startswith("Y")
 
 
 def extract_choice(response: str, options: set[str]) -> str | None:
