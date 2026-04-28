@@ -10,7 +10,7 @@ All angles are in degrees unless explicitly stated otherwise.
 from __future__ import annotations
 
 import math
-from typing import Tuple
+from typing import Optional, Tuple
 
 import numpy as np
 from PIL import Image, ImageDraw
@@ -153,6 +153,233 @@ def render_moon_disk(illumination: float,
     rgba[edge_band, 3] = (alpha_smooth[edge_band] * 255).astype(np.uint8)
 
     return Image.fromarray(rgba, mode="RGBA")
+
+
+def render_moon_disk_with_texture(
+    illumination: float,
+    terminator_angle_deg: float,
+    tint_rgb: Tuple[float, float, float],
+    pixel_radius: int,
+    texture: Optional[np.ndarray],
+) -> Image.Image:
+    """Render the Moon disk with real surface texture and correct phase.
+
+    Uses an equirectangular lunar surface texture mapped via orthographic
+    projection.  Lighting applies the atmospheric *tint* on the lit side
+    and a subtle blue-green earthshine on the dark side, with a smooth
+    terminator blend and limb darkening.
+
+    Falls back to the flat-colour ``render_moon_disk()`` if *texture* is
+    ``None`` or cannot be loaded (warning issued once).
+
+    Args:
+        illumination: Illuminated fraction (0.0 = new, 1.0 = full).
+        terminator_angle_deg: Position angle of the bright limb (the
+            terminator) in degrees, measured eastward from celestial north.
+        tint_rgb: RGB colour multipliers from atmospheric scattering,
+            each in range [0.0, 1.0].
+        pixel_radius: Moon disk radius in pixels.
+        texture: ``(H, W, 3)`` uint8 equirectangular texture array, or
+            ``None`` to fall back to the standard flat-colour disk.
+
+    Returns:
+        A ``(2 * pixel_radius, 2 * pixel_radius)`` RGBA image with
+        the moon disk centred in the frame.
+    """
+    if texture is None:
+        if not getattr(render_moon_disk_with_texture, "_fallback_warned", False):
+            import warnings
+            warnings.warn(
+                "No moon texture provided — falling back to flat-colour disk."
+            )
+            render_moon_disk_with_texture._fallback_warned = True
+        return render_moon_disk(illumination, terminator_angle_deg,
+                                tint_rgb, pixel_radius)
+
+    if pixel_radius < 1:
+        raise ValueError(f"Pixel radius must be positive, got {pixel_radius}")
+    illumination = max(0.0, min(1.0, illumination))
+
+    diameter = pixel_radius * 2
+    centre = (pixel_radius, pixel_radius)
+
+    # --- Coordinate grids (full 2D, not broadcast) ---
+    y_grid, x_grid = np.mgrid[:diameter, :diameter]
+    dx = x_grid - centre[0]
+    dy = y_grid - centre[1]
+    dist = np.sqrt(dx ** 2 + dy ** 2)
+
+    inside = dist <= pixel_radius
+
+    # Normalised pixel offsets in [-1, 1]
+    px = dx.astype(np.float64) / pixel_radius
+    py = dy.astype(np.float64) / pixel_radius
+
+    # --- Orthographic projection ---
+    # Compute latitude and longitude for each pixel
+    # lat = arcsin(py)
+    # lon = atan2(px, sqrt(1 - px² - py²))
+    lat = np.arcsin(np.clip(py, -1.0, 1.0))
+    sq = px ** 2 + py ** 2
+    sqrt_term = np.sqrt(np.clip(1.0 - sq, 0.0, 1.0))
+    lon = np.arctan2(px, sqrt_term)
+
+    # --- Phase (terminator) ---
+    theta = math.radians(terminator_angle_deg)
+    cos_t = math.cos(theta)
+    sin_t = math.sin(theta)
+    x_prime = dx * cos_t + dy * sin_t
+
+    terminator_offset = pixel_radius * (1.0 - 2.0 * illumination)
+    lit = inside & (x_prime >= terminator_offset)
+    dark = inside & ~lit
+
+    # --- Sample texture for each pixel ---
+    # We only sample inside the disk
+    rgba = np.zeros((diameter, diameter, 4), dtype=np.uint8)
+
+    tint_r, tint_g, tint_b = tint_rgb
+
+    # Texture sample for lit side
+    for idx in np.argwhere(lit):
+        y_i, x_i = int(idx[0]), int(idx[1])
+        r, g, b = _sample_moon_texture(
+            float(lon[y_i, x_i]), float(lat[y_i, x_i]), texture
+        )
+        # Apply tint
+        r = int(round(r * tint_r))
+        g = int(round(g * tint_g))
+        b = int(round(b * tint_b))
+        rgba[y_i, x_i, 0] = np.clip(r, 0, 255)
+        rgba[y_i, x_i, 1] = np.clip(g, 0, 255)
+        rgba[y_i, x_i, 2] = np.clip(b, 0, 255)
+        rgba[y_i, x_i, 3] = 255
+
+    # Earthshine for dark side
+    earthshine_factor = 0.015 * (1.0 - illumination)
+    # Blue-green tint for earthshine
+    es_r, es_g, es_b = 0.7, 0.8, 1.0
+    for idx in np.argwhere(dark):
+        y_i, x_i = int(idx[0]), int(idx[1])
+        r, g, b = _sample_moon_texture(
+            float(lon[y_i, x_i]), float(lat[y_i, x_i]), texture
+        )
+        r = int(round(r * earthshine_factor * es_r))
+        g = int(round(g * earthshine_factor * es_g))
+        b = int(round(b * earthshine_factor * es_b))
+        rgba[y_i, x_i, 0] = np.clip(r, 0, 255)
+        rgba[y_i, x_i, 1] = np.clip(g, 0, 255)
+        rgba[y_i, x_i, 2] = np.clip(b, 0, 255)
+        rgba[y_i, x_i, 3] = 255
+
+    # --- Terminator smooth blend (4px band) ---
+    # For pixels near the terminator, blend between lit and dark
+    terminator_width_px = 4.0
+    for idx in np.argwhere(inside):
+        y_i, x_i = int(idx[0]), int(idx[1])
+        xp = x_prime[y_i, x_i]
+        offset = terminator_offset
+        # Distance from terminator (negative = dark side, positive = lit)
+        distance_from_term = xp - offset
+
+        if -terminator_width_px <= distance_from_term <= 0:
+            # Dark side blend zone — blend toward lit side
+            blend = (distance_from_term + terminator_width_px) / terminator_width_px
+            # Sample lit colour at this pixel
+            r_lit, g_lit, b_lit = _sample_moon_texture(
+                float(lon[y_i, x_i]), float(lat[y_i, x_i]), texture
+            )
+            r_lit = int(round(r_lit * tint_r))
+            g_lit = int(round(g_lit * tint_g))
+            b_lit = int(round(b_lit * tint_b))
+
+            r_dark, g_dark, b_dark = _sample_moon_texture(
+                float(lon[y_i, x_i]), float(lat[y_i, x_i]), texture
+            )
+            r_dark = int(round(r_dark * earthshine_factor * es_r))
+            g_dark = int(round(g_dark * earthshine_factor * es_g))
+            b_dark = int(round(b_dark * earthshine_factor * es_b))
+
+            rgba[y_i, x_i, 0] = np.clip(
+                int(round(r_dark + (r_lit - r_dark) * blend)), 0, 255
+            )
+            rgba[y_i, x_i, 1] = np.clip(
+                int(round(g_dark + (g_lit - g_dark) * blend)), 0, 255
+            )
+            rgba[y_i, x_i, 2] = np.clip(
+                int(round(b_dark + (b_lit - b_dark) * blend)), 0, 255
+            )
+            rgba[y_i, x_i, 3] = 255
+
+    # --- Limb darkening on lit side ---
+    if illumination > 0.05:
+        edge_factor = dist / pixel_radius
+        limb_darken = 1.0 - 0.15 * (edge_factor ** 2)
+        lit_mask_np = lit.astype(np.float64)
+        rgba[..., 0] = (
+            rgba[..., 0].astype(np.float32) * (1.0 - lit_mask_np + lit_mask_np * limb_darken)
+        ).astype(np.uint8)
+        rgba[..., 1] = (
+            rgba[..., 1].astype(np.float32) * (1.0 - lit_mask_np + lit_mask_np * limb_darken)
+        ).astype(np.uint8)
+        rgba[..., 2] = (
+            rgba[..., 2].astype(np.float32) * (1.0 - lit_mask_np + lit_mask_np * limb_darken)
+        ).astype(np.uint8)
+
+    # --- Anti-aliased edge ---
+    edge_band = (dist > pixel_radius - 1.0) & (dist <= pixel_radius)
+    alpha_smooth = np.clip(pixel_radius - dist, 0.0, 1.0)
+    rgba[edge_band, 3] = (alpha_smooth[edge_band] * 255).astype(np.uint8)
+
+    return Image.fromarray(rgba, mode="RGBA")
+
+
+def _sample_moon_texture(
+    lon_rad: float,
+    lat_rad: float,
+    texture: np.ndarray,
+) -> Tuple[int, int, int]:
+    """Inline bilinear sample of an equirectangular texture.
+
+    Replicates ``moon_texture.sample_texture()`` to avoid circular
+    dependency concerns and keep the render module self-contained.
+
+    Args:
+        lon_rad: Longitude in radians in [-π, π].
+        lat_rad: Latitude in radians in [-π/2, π/2].
+        texture: ``(H, W, 3)`` uint8 equirectangular texture.
+
+    Returns:
+        ``(r, g, b)`` tuple of integers in [0, 255].
+    """
+    h, w = texture.shape[:2]
+    u = (lon_rad + np.pi) / (2.0 * np.pi)
+    v = (np.pi / 2.0 - lat_rad) / np.pi
+
+    u = u % 1.0
+    v = min(max(v, 0.0), 1.0)
+
+    x = u * (w - 1)
+    y = v * (h - 1)
+
+    x0 = int(np.floor(x))
+    x1 = min(x0 + 1, w - 1)
+    y0 = int(np.floor(y))
+    y1 = min(y0 + 1, h - 1)
+
+    fx = x - x0
+    fy = y - y0
+
+    c00 = texture[y0, x0].astype(np.float32)
+    c10 = texture[y0, x1].astype(np.float32)
+    c01 = texture[y1, x0].astype(np.float32)
+    c11 = texture[y1, x1].astype(np.float32)
+
+    c0 = c00 + fx * (c10 - c00)
+    c1 = c01 + fx * (c11 - c01)
+    result = c0 + fy * (c1 - c0)
+
+    return (int(round(result[0])), int(round(result[1])), int(round(result[2])))
 
 
 def moon_position_on_image(altitude_deg: float,

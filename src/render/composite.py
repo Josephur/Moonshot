@@ -33,8 +33,10 @@ from render.sky import sky_gradient
 from render.moon_render import (
     moon_size_pixels,
     render_moon_disk,
+    render_moon_disk_with_texture,
     moon_position_on_image,
 )
+from render.moon_texture import load_texture
 from render.horizon import horizon_line, horizon_dip_degrees
 from render.weather_overlay import render_clouds, render_haze, render_fog
 from render.annotations import (
@@ -161,11 +163,15 @@ def generate_moon_image(
     moon_radius_px = moon_size_pixels(angular_diameter, fov_deg, image_w) // 2
     moon_radius_px = max(moon_radius_px, 2)  # at least 2px radius for visibility
 
-    moon_disk = render_moon_disk(
+    # Load the moon surface texture (cached — only loaded once)
+    _moon_texture = load_texture()
+
+    moon_disk = render_moon_disk_with_texture(
         illum_frac,
         terminator_angle,
         (tint_r, tint_g, tint_b),
         moon_radius_px,
+        _moon_texture,
     )
 
     # Position on image — center the moon when using a narrow FOV (telephoto-style)
