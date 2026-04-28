@@ -109,8 +109,9 @@ class TestFromZip:
         assert loc.state == "Indiana"
         assert loc.zip_code == "46201"
 
-    def test_from_zip_invalid_format(self):
-        """Invalid ZIP format should return None early."""
+    def test_from_zip_invalid_format(self, monkeypatch):
+        """Non-standard ZIP format should warn, try geocoding, and return None on failure."""
+        monkeypatch.setattr(geocode._geolocator, 'geocode', lambda q, **kw: None)
         loc = geocode.from_zip("abc")
         assert loc is None
 

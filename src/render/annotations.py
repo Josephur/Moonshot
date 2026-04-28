@@ -27,6 +27,7 @@ class LocationData:
     """
     city: str = ""
     state: str = ""
+    country: str = ""
     lat: float = 0.0
     lon: float = 0.0
 
@@ -185,8 +186,18 @@ def annotate_image(image: Image.Image,
     margin = int(w * 0.02)
     line_spacing = body_size + 6
 
-    # --- Header: "City, State • Date Time" ---
-    city_str = f"{location_data.city}, {location_data.state}" if location_data.city else f"{location_data.lat:.2f}, {location_data.lon:.2f}"
+    # --- Header: "Location • Date Time" ---
+    parts = []
+    if location_data.city:
+        parts.append(location_data.city)
+    if location_data.state:
+        parts.append(location_data.state)
+    if location_data.country:
+        parts.append(location_data.country)
+    if parts:
+        city_str = ", ".join(parts)
+    else:
+        city_str = f"{location_data.lat:.2f}, {location_data.lon:.2f}"
     header_text = f"{city_str}  •  {time_data.date_str} {time_data.time_str} {time_data.timezone_str}"
     _draw_text_with_background(
         draw,

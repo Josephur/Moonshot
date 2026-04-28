@@ -55,6 +55,7 @@ def generate_moon_image(
     lon: float,
     city: str = "",
     state: str = "",
+    country: str = "",
     timezone_str: str = "",
     dt: Optional[datetime] = None,
     fov_deg: float = 90.0,
@@ -207,7 +208,7 @@ def generate_moon_image(
         current = render_fog(current, humidity)
 
     # 7e. Annotations
-    loc_data = LocationData(city=city, state=state, lat=lat, lon=lon)
+    loc_data = LocationData(city=city, state=state, country=country, lat=lat, lon=lon)
     moon_data = MoonData(
         illumination_pct=illum_frac * 100.0,
         altitude_deg=moon_app_alt,

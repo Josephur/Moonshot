@@ -1,19 +1,21 @@
 # Moonshot 🌙
 
-Generate scientifically-accurate PNG images of the moon as it would appear from any US location.
+Generate scientifically-accurate PNG images of the moon as it would appear from **anywhere on Earth**.
 
 ## Features
 
 - **Precise moon position** — altitude & azimuth based on IAU-standard algorithms
 - **Realistic phase rendering** — illumination percentage, terminator angle, phase name
+- **Real moon surface texture** — texture-mapped lunar surface from NASA LRO data with earthshine effect on the dark side
+- **Real star data** — stars rendered from the HYG Database v3 (41K+ stars, precessed to observation epoch) with spectral colors and atmospheric extinction
 - **Atmospheric effects** — refraction correction, Rayleigh/Mie scattering for accurate color
 - **Weather integration** — current conditions affect moon visibility and sky rendering
-- **US location support** — by ZIP code, City/State, or direct lat/lon coordinates
+- **Worldwide location support** — by ZIP/postal code, City/State/Country, or direct lat/lon coordinates
 - **Beautiful PNG output** — configurable resolution, horizon, annotations
 
 ## Gallery
 
-Moonshots generated on **April 27, 2026** — a Waning Gibbous moon (∼89% illuminated):
+Moonshots generated on **April 28, 2026** — a Waning Gibbous moon (∼95% illuminated):
 
 | New York City (8:30pm EDT) | Los Angeles (8:30pm PDT) | Chicago (8:30pm CDT) |
 |---|---|---|
@@ -34,11 +36,16 @@ source .venv/bin/activate
 pip install -r requirements.txt
 
 # Generate moon image for Indianapolis
-python -m src.main --zip 46201 --date 2026-04-27 --time 21:00
+python -m src.main --zip 46201 --date 2026-04-28 --time 21:00
 
 # With weather data
-export MOONSHOT_WEATHER_API_KEY=your_openweathermap_key
+export MOONSHOT_WEATHER_API_KEY=your_openweather_api_key
 python -m src.main --city "Indianapolis" --state "IN" --output moon.png
+
+# International locations
+python -m src.main --city "Paris" --country "France"
+python -m src.main --city "Tokyo"
+python -m src.main --city "Melbourne" --state "Victoria" --country "Australia"
 
 # Full options
 python -m src.main --help
@@ -48,9 +55,10 @@ python -m src.main --help
 
 | Flag | Description | Default |
 |------|-------------|---------|
-| `--zip` | US ZIP code | — |
+| `--zip` | ZIP / postal code | — |
 | `--city` | City name | — |
-| `--state` | State abbreviation | — |
+| `--state` | State / region / province | — |
+| `--country` | Country name | — (defaults to USA if --state given) |
 | `--lat` | Latitude | — |
 | `--lon` | Longitude | — |
 | `--date` | Date (YYYY-MM-DD) | Today |
@@ -66,18 +74,20 @@ python -m src.main --help
 Whenever rendering code changes, regenerate the gallery before committing:
 
 ```bash
-python -m src.main --zip 10001 --output output/gallery/moonshot_new_york_city.png
-python -m src.main --zip 90001 --output output/gallery/moonshot_los_angeles.png
-python -m src.main --city Chicago --state IL --output output/gallery/moonshot_chicago.png
-python -m src.main --city Indianapolis --state IN --output output/gallery/moonshot_indianapolis.png
-python -m src.main --city Miami --state FL --output output/gallery/moonshot_miami.png
-python -m src.main --city Denver --state CO --output output/gallery/moonshot_denver.png
+python -m src.main --zip 10001 --date 2026-04-28 --time 20:30 --output output/gallery/moonshot_new_york_city.png
+python -m src.main --zip 90001 --date 2026-04-28 --time 20:30 --output output/gallery/moonshot_los_angeles.png
+python -m src.main --city Chicago --state IL --date 2026-04-28 --time 20:30 --output output/gallery/moonshot_chicago.png
+python -m src.main --city Indianapolis --state IN --date 2026-04-28 --time 21:00 --output output/gallery/moonshot_indianapolis.png
+python -m src.main --city Miami --state FL --date 2026-04-28 --time 21:00 --output output/gallery/moonshot_miami.png
+python -m src.main --city Denver --state CO --date 2026-04-28 --time 20:30 --output output/gallery/moonshot_denver.png
 ```
 
 ## Technical Details
 
 - **Moon position:** IAU-standard algorithms via ELP2000-82 analytical lunar ephemeris
 - **Phase:** Sun-Moon-Observer angle with precise terminator
+- **Moon surface:** Texture-mapped from LRO WAC data (512x256 equirectangular), with earthshine on the dark side
+- **Stars:** HYG Database v3 (41K+ stars, Vmag < 8.0), precessed to observation epoch with spectral colors and atmospheric extinction
 - **Refraction:** Saemundsson (1986) formula
 - **Scattering:** Rayleigh & Mie with air mass via Kasten & Young (1989)
 - **Weather:** OpenWeatherMap API (free tier)
