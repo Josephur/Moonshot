@@ -137,4 +137,5 @@ def horizon_line(image: Image.Image,
             pixels[y_start:, col, 2] = colour[2]
 
     from PIL import Image
-    return Image.fromarray(pixels, mode="RGB")
+    # Slice off alpha channel if present (RGBA -> RGB)
+    return Image.fromarray(pixels[:, :, :3], mode="RGB")
