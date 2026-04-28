@@ -22,7 +22,7 @@ if _PKG_DIR not in sys.path:
 from typing import Optional
 
 from config import Config, get_api_key
-from location.geocode import from_zip, from_city_state, from_lat_lon, Location
+from location.geocode import from_zip, from_city_state, from_city_country, from_lat_lon, Location
 from weather.provider import fetch_weather, default_weather
 from render.composite import generate_moon_image
 
@@ -37,11 +37,13 @@ def build_parser() -> argparse.ArgumentParser:
     loc = parser.add_argument_group("location (mutually exclusive)")
 
     loc.add_argument("--zip", type=str, default=None,
-                     help="5-digit US ZIP code")
+                     help="ZIP or postal code")
     loc.add_argument("--city", type=str, default=None,
-                     help="City name (requires --state)")
+                     help="City name")
     loc.add_argument("--state", type=str, default=None,
-                     help="State name or code (requires --city)")
+                     help="State, province, or region name/code")
+    loc.add_argument("--country", type=str, default=None,
+                     help="Country name (default: USA when --state or --zip given)")
     loc.add_argument("--lat", type=float, default=None,
                      help="Latitude in decimal degrees")
     loc.add_argument("--lon", type=float, default=None,
@@ -73,16 +75,35 @@ def build_parser() -> argparse.ArgumentParser:
 def resolve_location(args) -> Optional[Location]:
     """Resolve location from parsed arguments.
 
-    Priority: --zip > --city/--state/--lat/--lon > --lat/--lon alone.
+    Priority (descending):
+      1. --zip (+ optional --country)
+      2. --city + --country (no state)
+      3. --city + --state (+ optional --country, defaults USA)
+      4. --city only (global resolution, no US restriction)
+      5. --lat + --lon
 
     Returns:
         A ``Location`` namedtuple, or None if resolution fails.
     """
+    country = args.country or ""
+
     if args.zip:
-        return from_zip(args.zip)
+        # If zip is given and no explicit country, default to "USA"
+        if not country:
+            country = "USA"
+        return from_zip(args.zip, country)
+
+    if args.city and args.country and not args.state:
+        # City + country (no state)
+        return from_city_country(args.city, args.country)
 
     if args.city and args.state:
-        return from_city_state(args.city, args.state)
+        # City + state; if no country, defaults USA in from_city_state
+        return from_city_state(args.city, args.state, country)
+
+    if args.city:
+        # City only — resolve globally
+        return from_city_country(args.city, "")
 
     if args.lat is not None and args.lon is not None:
         return from_lat_lon(args.lat, args.lon)
@@ -241,6 +262,7 @@ def main():
     img = generate_moon_image(
         lat=location.lat, lon=location.lon,
         city=location.city, state=location.state,
+        country=location.country,
         timezone_str=location.timezone_str,
         dt=local_dt,
         fov_deg=config.fov_deg,
@@ -256,7 +278,9 @@ def main():
     print("=" * 56)
     print("  Moonshot — Summary")
     print("=" * 56)
-    print(f"  Location:     {location.city or 'N/A'}, {location.state or 'N/A'}")
+    loc_parts = [p for p in [location.city, location.state, location.country] if p]
+    loc_str = ", ".join(loc_parts) if loc_parts else "N/A"
+    print(f"  Location:     {loc_str}")
     print(f"  Coordinates:  {location.lat:.4f}, {location.lon:.4f}")
     print(f"  Timezone:     {location.timezone_str or 'N/A'}")
     print(f"  Date/Time:    {obs_date} {obs_time} local")
