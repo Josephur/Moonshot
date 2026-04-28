@@ -154,7 +154,8 @@ def generate_moon_image(
     # ---- 7. Build image layers ----
 
     # 7a. Sky gradient
-    sky = sky_gradient(sun_alt, moon_alt, image_w, image_h)
+    sky = sky_gradient(sun_alt, moon_alt, image_w, image_h,
+                         lat=lat, lon=lon, jd=jd, fov_deg=fov_deg)
 
     # 7b. Moon disk
     moon_radius_px = moon_size_pixels(angular_diameter, fov_deg, image_w) // 2
