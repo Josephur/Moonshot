@@ -26,7 +26,7 @@ class TestMoonVisibility:
     def test_moon_visible(self):
         """Moon visible at FOV=10."""
         path = render_image("v1_moon.png", lat=39.77, lon=-86.16,
-                            date="2026-04-27", time="21:00", fov=10)
+                            date="2026-04-28", time="21:00", fov=10)
         response = ask_with_retry(path, "Is there a moon visible in this image?")
         assert check_yes(response), f"Moon not detected.\nModel: {response!r}"
 
@@ -67,32 +67,79 @@ class TestAnnotations:
         assert check_yes(response), f"Annotations not detected.\nModel: {response!r}"
 
 
-# ── V5: Stars ──────────────────────────────────────────────
-class TestStars:
-    """V5: Deep night (3am) should show stars."""
+# ── V5: Moon Texture — Surface Detail ──────────────────────
+class TestMoonTexture:
+    """V5: The moon should show surface detail (craters/mares)."""
 
-    @pytest.mark.xfail(reason="moondream misses stars when large moon is present")
+    def test_moon_has_surface_detail(self):
+        """Moon surface should not be a flat solid colour — verify craters/mares visible."""
+        path = render_image("v5_moon_texture.png", lat=39.77, lon=-86.16,
+                            date="2026-04-28", time="21:00", fov=10)
+        response = ask_with_retry(path, "Does the moon in this image have visible surface features like craters or dark spots?")
+        assert check_yes(response), f"Moon surface detail not detected.\nModel: {response!r}"
+
+    def test_moon_not_solid_color(self):
+        """The moon should not appear as a uniform solid disk."""
+        path = render_image("v5_moon_not_solid.png", lat=39.77, lon=-86.16,
+                            date="2026-04-28", time="21:00", fov=10)
+        response = ask_with_retry(path, "Is the moon just a plain solid circle with no texture or detail?")
+        assert not check_yes(response), f"Moon appears as solid disk.\nModel: {response!r}"
+
+
+# ── V6: Stars — Visible in Deep Night ─────────────────────
+class TestStars:
+    """V6: Deep night (3am) should show real stars, not random dots."""
+
     def test_stars_visible_deep_night(self):
         """Stars should be visible at 3am."""
-        path = render_image("v5_stars.png", time="03:00")
+        path = render_image("v6_stars.png", time="03:00")
         response = ask_with_retry(path, "Are there stars or small white dots visible in the dark sky?")
         assert check_yes(response), f"Stars not detected.\nModel: {response!r}"
 
+    def test_stars_have_varying_brightness(self):
+        """Stars should not all be the same brightness."""
+        path = render_image("v6_stars_bright.png", time="03:00")
+        response = ask_with_retry(path, "Are there some stars that are noticeably brighter or larger than others?")
+        assert check_yes(response), f"No brightness variation in stars.\nModel: {response!r}"
 
-# ── V6: Sky Color Sanity (Wrong Sky Detection) ─────────────
+
+# ── V7: Constellation Pattern (Real Stars) ─────────────────
+class TestConstellation:
+    """V7: Real star data should produce recognisable constellations."""
+
+    @pytest.mark.xfail(reason="moondream struggles to identify specific constellations at current resolution")
+    def test_star_clustering_near_orion(self):
+        """Stars should cluster in patterns, not be uniformly random."""
+        path = render_image("v7_star_clusters.png", time="03:00", fov=90)
+        response = ask_with_retry(
+            path,
+            "Are the stars in this image scattered randomly, or do they form patterns "
+            "and clusters like actual constellations?"
+        )
+        assert "PATTERN" in response.upper() or "CLUSTER" in response.upper() or "CONSTELLATION" in response.upper(), \
+            f"Stars appear random.\nModel: {response!r}"
+
+    def test_real_stars_not_random_grid(self):
+        """Stars should not look like a grid or regular pattern."""
+        path = render_image("v7_stars_not_grid.png", time="03:00")
+        response = ask_with_retry(path, "Do the stars in this image look like a regular grid or evenly spaced pattern?")
+        assert not check_yes(response), f"Stars appear as regular grid.\nModel: {response!r}"
+
+
+# ── V8: Sky Color Sanity (Wrong Sky Detection) ─────────────
 class TestWrongSkyDetection:
-    """V6: Negative tests — model must detect contradictions."""
+    """V8: Negative tests — model must detect contradictions."""
 
     def test_daytime_sky_at_noon(self):
         """Noon render should be daytime."""
-        path = render_image("v6a_noon.png", time="12:00")
+        path = render_image("v8a_noon.png", time="12:00")
         response = ask_with_retry(path, "Describe the sky in this image. Is it bright and daytime or dark and night?")
         assert "DAY" in response.upper() or "BRIGHT" in response.upper(), \
             f"Noon sky not daytime.\nModel: {response!r}"
 
     def test_daytime_sky_not_at_3am(self):
         """3am render should NOT be daytime."""
-        path = render_image("v6b_3am_not_daytime.png", time="03:00")
+        path = render_image("v8b_3am_not_daytime.png", time="03:00")
         response = ask_with_retry(path, "Is this a daytime or night scene?")
         assert "NIGHT" in response.upper() or "DARK" in response.upper(), \
             f"3am incorrectly called daytime.\nModel: {response!r}"
@@ -100,7 +147,24 @@ class TestWrongSkyDetection:
     @pytest.mark.xfail(reason="moondream sees noon scene as 'sunrise/sunset' due to warm scattering tint")
     def test_night_sky_not_at_noon(self):
         """Noon render should NOT be night."""
-        path = render_image("v6c_noon_not_night.png", time="12:00")
+        path = render_image("v8c_noon_not_night.png", time="12:00")
         response = ask_with_retry(path, "Is this a daytime or night scene?")
         assert "DAY" in response.upper() or "BRIGHT" in response.upper(), \
             f"Noon incorrectly called night.\nModel: {response!r}"
+
+
+# ── V9: Earthshine Effect ─────────────────────────────────
+class TestEarthshine:
+    """V9: The dark side of the moon should have a subtle glow (earthshine)."""
+
+    @pytest.mark.xfail(reason="moondream cannot resolve faint earthshine on the moon's dark side at current moon sizes")
+    def test_earthshine_present_crescent(self):
+        """A thin crescent moon should show faint illumination on the dark side."""
+        path = render_image("v9_earthshine_crescent.png", lat=39.77, lon=-86.16,
+                            date="2026-04-22", time="21:00", fov=10)
+        response = ask_with_retry(
+            path,
+            "Look at the dark part of the moon. Is there a very faint glow or "
+            "faint details visible on the shadowed side?"
+        )
+        assert check_yes(response), f"Earthshine not detected.\nModel: {response!r}"
