@@ -136,4 +136,5 @@ def horizon_line(image: Image.Image,
             pixels[y_start:, col, 1] = colour[1]
             pixels[y_start:, col, 2] = colour[2]
 
+    from PIL import Image
     return Image.fromarray(pixels, mode="RGB")

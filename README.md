@@ -11,6 +11,20 @@ Generate scientifically-accurate PNG images of the moon as it would appear from 
 - **US location support** — by ZIP code, City/State, or direct lat/lon coordinates
 - **Beautiful PNG output** — configurable resolution, horizon, annotations
 
+## Gallery
+
+Moonshots generated on **April 27, 2026** — a Waning Gibbous moon (∼89% illuminated):
+
+| New York City (8:30pm EDT) | Los Angeles (8:30pm PDT) | Chicago (8:30pm CDT) |
+|---|---|---|
+| ![NYC](output/gallery/moonshot_new_york_city.png) | ![LA](output/gallery/moonshot_los_angeles.png) | ![Chicago](output/gallery/moonshot_chicago.png) |
+
+| Indianapolis (9:00pm EDT) | Miami (9:00pm EDT) | Denver (8:30pm MDT) |
+|---|---|---|
+| ![Indianapolis](output/gallery/moonshot_indianapolis.png) | ![Miami](output/gallery/moonshot_miami.png) | ![Denver](output/gallery/moonshot_denver.png) |
+
+*Colors and moon positions vary by latitude, longitude, and atmospheric conditions.*
+
 ## Quick Start
 
 ```bash
