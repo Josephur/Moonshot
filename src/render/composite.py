@@ -132,7 +132,7 @@ def generate_moon_image(
                                         (moon_ra, moon_dec, moon_distance_km))
     waxing = moonphase.is_waxing(sun_ra, moon_ra)
     phase_name = moonphase.phase_name(illum_frac, waxing)
-    terminator_angle = moonphase.terminator_angle(jd)
+    terminator_angle = moonphase.terminator_angle(jd, lat, lon)
 
     # ---- 5. Angular diameter ----
     # Moon's angular diameter = 2 * arctan(R_moon / distance)

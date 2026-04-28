@@ -153,17 +153,27 @@ def phase_name(illumination_fraction: float, waxing: bool) -> str:
         return "Waning Crescent"
 
 
-def terminator_angle(jd: float) -> float:
+def terminator_angle(jd: float, observer_lat_deg: float = 0.0,
+                     observer_lon_deg: float = 0.0) -> float:
     """Compute the position angle of the Moon's bright limb (terminator).
 
     This is the angle of the line dividing the illuminated and dark
     portions of the Moon, measured eastward from celestial north.
 
-    Uses the geocentric positions of the Sun and Moon.
+    When *observer_lat_deg* is provided, the angle is corrected by the
+    parallactic angle so that it represents the orientation as seen
+    by an observer on the ground (accounting for the rotation of the
+    celestial sphere relative to the local zenith).  In practice this
+    means the moon appears rotated in the southern hemisphere vs the
+    northern hemisphere.
 
     :param jd: Julian Day Number
+    :param observer_lat_deg: Observer's latitude in degrees (+" North)
+    :param observer_lon_deg: Observer's longitude in degrees (+" East)
     :return: Position angle of the bright limb in degrees (0-360)
     """
+    from moon import timeconv as _tc
+
     sun_ra, sun_dec = moonpos.sun_position(jd)
     moon_ra, moon_dec, _ = moonpos.moon_position(jd)
 
@@ -177,11 +187,37 @@ def terminator_angle(jd: float) -> float:
     d_ra = s_ra - m_ra
 
     # Position angle of the bright limb
-    # chi = arctan2(cos(s_dec) * sin(d_ra),
-    #               sin(s_dec) * cos(m_dec) - cos(s_dec) * sin(m_dec) * cos(d_ra))
     x = np.cos(s_dec) * np.sin(d_ra)
     y = (np.sin(s_dec) * np.cos(m_dec)
          - np.cos(s_dec) * np.sin(m_dec) * np.cos(d_ra))
 
     chi = np.degrees(np.arctan2(x, y))
+
+    # ---- Parallactic angle correction for observer latitude ----
+    # The moon's orientation on the image depends on the observer's
+    # position. The parallactic angle q is the angle between the
+    # direction to celestial north and the direction to the zenith.
+    #
+    # tan(q) = sin(HA) / (tan(phi)*cos(delta) - sin(delta)*cos(HA))
+    #
+    # where HA = hour angle of the moon, phi = observer latitude,
+    # and delta = moon's declination.
+    # The terminator angle on the image = chi + q
+    if observer_lat_deg != 0.0:
+        # Compute Local Sidereal Time for this observer
+        gmst_hours = _tc.gmst(jd)
+        lst_hours = _tc.lmst(gmst_hours, observer_lon_deg)
+        # Hour angle of the moon (in hours) = LST - RA
+        ha_hours = lst_hours - moon_ra / 15.0
+        # Convert hour angle to radians
+        ha_rad = np.radians(ha_hours * 15.0)
+        phi_rad = np.radians(observer_lat_deg)
+
+        q_rad = np.arctan2(
+            np.sin(ha_rad),
+            np.tan(phi_rad) * np.cos(m_dec) - np.sin(m_dec) * np.cos(ha_rad)
+        )
+        q_deg = np.degrees(q_rad)
+        chi += q_deg
+
     return float(chi % 360.0)
