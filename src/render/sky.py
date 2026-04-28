@@ -156,12 +156,24 @@ def _night_gradient(width: int, height: int) -> Image.Image:
     return Image.fromarray(pixels, mode="RGB")
 
 
-def _add_stars(image: Image.Image) -> Image.Image:
-    """Add a sprinkling of small white dots for the night/twilight sky.
+def _add_stars(image: Image.Image,
+               lat: float = None,
+               lon: float = None,
+               jd: float = None,
+               fov_deg: float = None) -> Image.Image:
+    """Add stars to a night/twilight sky.
 
-    The stars are randomly placed; we use a seeded deterministic
-    approach so output is reproducible for the same dimensions.
+    When ``lat``, ``lon``, ``jd``, and ``fov_deg`` are all provided,
+    renders real stars from the HYG catalog using the full coordinate
+    pipeline.  Otherwise falls back to random white dots (legacy
+    behaviour).
     """
+    # Real star rendering when all geolocation params are present
+    if all(v is not None for v in (lat, lon, jd, fov_deg)):
+        from render.stars import render_stars_to_sky
+        return render_stars_to_sky(image, lat, lon, jd, fov_deg)
+
+    # Legacy fallback: random white dots
     w, h = image.size
     pixels = np.array(image, dtype=np.float32)
 
@@ -173,11 +185,9 @@ def _add_stars(image: Image.Image) -> Image.Image:
     brightnesses = rng.uniform(0.3, 1.0, size=n_stars)
 
     for x, y, br in zip(xs, ys, brightnesses):
-        # Skip stars in the bottom 12% (behind horizon)
         if y > h * 0.88:
             continue
         intensity = int(round(br * 255))
-        # Brightness varies per star; keep them small (~1px)
         pixels[y, x, 0] = min(pixels[y, x, 0] + intensity * 0.5, 255.0)
         pixels[y, x, 1] = min(pixels[y, x, 1] + intensity * 0.5, 255.0)
         pixels[y, x, 2] = min(pixels[y, x, 2] + intensity * 0.5, 255.0)
@@ -239,7 +249,11 @@ def _add_moon_glow(image: Image.Image,
 def sky_gradient(sun_altitude_deg: float,
                  moon_altitude_deg: float,
                  width: int,
-                 height: int) -> Image.Image:
+                 height: int,
+                 lat: Optional[float] = None,
+                 lon: Optional[float] = None,
+                 jd: Optional[float] = None,
+                 fov_deg: Optional[float] = None) -> Image.Image:
     """Render a sky background image based on the Sun's altitude.
 
     Three regimes:
@@ -252,11 +266,19 @@ def sky_gradient(sun_altitude_deg: float,
     If the moon is above the horizon a subtle atmospheric backscatter
     glow is added near its position.
 
+    When ``lat``, ``lon``, ``jd``, and ``fov_deg`` are all provided,
+    real star positions are rendered from the HYG catalog instead of
+    random white dots.
+
     Args:
         sun_altitude_deg: Sun altitude in degrees (above = positive).
         moon_altitude_deg: Moon altitude in degrees.
         width: Image width in pixels.
         height: Image height in pixels.
+        lat: Observer latitude (for real star rendering).
+        lon: Observer longitude (for real star rendering).
+        jd: Julian Date of observation (for real star rendering).
+        fov_deg: Vertical field-of-view in degrees (for real star rendering).
 
     Returns:
         A new PIL ``Image`` in RGB mode of size ``(width, height)``.
@@ -269,10 +291,10 @@ def sky_gradient(sun_altitude_deg: float,
         sky = _daytime_gradient(width, height, sun_altitude_deg)
     elif sun_altitude_deg > -18.0:
         sky = _twilight_gradient(width, height, sun_altitude_deg)
-        sky = _add_stars(sky)
+        sky = _add_stars(sky, lat=lat, lon=lon, jd=jd, fov_deg=fov_deg)
     else:
         sky = _night_gradient(width, height)
-        sky = _add_stars(sky)
+        sky = _add_stars(sky, lat=lat, lon=lon, jd=jd, fov_deg=fov_deg)
 
     # Add moon glow if the moon is above the horizon
     if moon_altitude_deg > 0.0:
