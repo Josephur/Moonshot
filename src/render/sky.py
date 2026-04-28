@@ -253,7 +253,9 @@ def sky_gradient(sun_altitude_deg: float,
                  lat: Optional[float] = None,
                  lon: Optional[float] = None,
                  jd: Optional[float] = None,
-                 fov_deg: Optional[float] = None) -> Image.Image:
+                 fov_deg: Optional[float] = None,
+                 moon_px: Optional[int] = None,
+                 moon_py: Optional[int] = None) -> Image.Image:
     """Render a sky background image based on the Sun's altitude.
 
     Three regimes:
@@ -279,6 +281,10 @@ def sky_gradient(sun_altitude_deg: float,
         lon: Observer longitude (for real star rendering).
         jd: Julian Date of observation (for real star rendering).
         fov_deg: Vertical field-of-view in degrees (for real star rendering).
+        moon_px: Moon pixel X position (for glow placement).  If omitted
+            the position is estimated from altitude.
+        moon_py: Moon pixel Y position (for glow placement).  If omitted
+            the position is estimated from altitude.
 
     Returns:
         A new PIL ``Image`` in RGB mode of size ``(width, height)``.
@@ -298,10 +304,13 @@ def sky_gradient(sun_altitude_deg: float,
 
     # Add moon glow if the moon is above the horizon
     if moon_altitude_deg > 0.0:
-        # Estimate moon position on the image for glow placement
-        # (simplified) — positioned at a fraction of altitude.
-        moon_x = width // 2
-        moon_y = int(height * (1.0 - (moon_altitude_deg / 90.0) * 0.85))
-        sky = _add_moon_glow(sky, moon_altitude_deg, moon_x, moon_y)
+        if moon_px is not None and moon_py is not None:
+            # Use actual moon pixel position (from moon_position_on_image)
+            sky = _add_moon_glow(sky, moon_altitude_deg, moon_px, moon_py)
+        else:
+            # Fallback estimate — approximate position from altitude alone
+            moon_x = width // 2
+            moon_y = int(height * (1.0 - (moon_altitude_deg / 90.0) * 0.85))
+            sky = _add_moon_glow(sky, moon_altitude_deg, moon_x, moon_y)
 
     return sky

@@ -157,9 +157,18 @@ def generate_moon_image(
 
     # ---- 7. Build image layers ----
 
-    # 7a. Sky gradient
+    # Compute moon pixel position early (needed for both sky glow and moon
+    # compositing). Center the moon when using a narrow FOV (telephoto-style).
+    _center_moon = fov_deg < 20.0
+    moon_x, moon_y = moon_position_on_image(
+        moon_app_alt, moon_az, fov_deg, image_w, image_h,
+        center_on_moon=_center_moon,
+    )
+
+    # 7a. Sky gradient (pass actual moon pixel position for correct glow)
     sky = sky_gradient(sun_alt, moon_alt, image_w, image_h,
-                         lat=lat, lon=lon, jd=jd, fov_deg=fov_deg)
+                         lat=lat, lon=lon, jd=jd, fov_deg=fov_deg,
+                         moon_px=moon_x, moon_py=moon_y)
 
     # 7b. Moon disk
     moon_radius_px = moon_size_pixels(angular_diameter, fov_deg, image_w) // 2
@@ -175,13 +184,6 @@ def generate_moon_image(
         moon_radius_px,
         _moon_texture,
         parallactic_angle_deg=parallactic_angle,
-    )
-
-    # Position on image — center the moon when using a narrow FOV (telephoto-style)
-    _center_moon = fov_deg < 20.0
-    moon_x, moon_y = moon_position_on_image(
-        moon_app_alt, moon_az, fov_deg, image_w, image_h,
-        center_on_moon=_center_moon,
     )
 
     # Composite moon onto sky
