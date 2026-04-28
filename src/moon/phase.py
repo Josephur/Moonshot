@@ -221,3 +221,43 @@ def terminator_angle(jd: float, observer_lat_deg: float = 0.0,
         chi += q_deg
 
     return float(chi % 360.0)
+
+
+def parallactic_angle(jd: float, observer_lat_deg: float,
+                      observer_lon_deg: float) -> float:
+    """Compute the parallactic angle of the Moon at the observer's location.
+
+    The parallactic angle is the angle between the direction to celestial
+    north and the direction to the zenith, as seen by the observer.  It
+    determines how the Moon's disk appears rotated on the sky.
+
+    In the northern hemisphere the Moon appears "right-side up" (small
+    parallactic angle), while in the southern hemisphere it appears
+    rotated (large parallactic angle, approaching 180°).
+
+    :param jd: Julian Day Number
+    :param observer_lat_deg: Observer's latitude in degrees (+ = North)
+    :param observer_lon_deg: Observer's longitude in degrees (+ = East)
+    :return: Parallactic angle in degrees (-180 to 180)
+    """
+    if observer_lat_deg == 0.0:
+        return 0.0
+
+    from moon import timeconv as _tc
+    from moon import position as moonpos
+
+    moon_ra, moon_dec, _ = moonpos.moon_position(jd)
+
+    gmst_hours = _tc.gmst(jd)
+    lst_hours = _tc.lmst(gmst_hours, observer_lon_deg)
+    ha_hours = lst_hours - moon_ra / 15.0
+    ha_rad = np.radians(ha_hours * 15.0)
+
+    m_dec = np.radians(moon_dec)
+    phi_rad = np.radians(observer_lat_deg)
+
+    q_rad = np.arctan2(
+        np.sin(ha_rad),
+        np.tan(phi_rad) * np.cos(m_dec) - np.sin(m_dec) * np.cos(ha_rad)
+    )
+    return float(np.degrees(q_rad))

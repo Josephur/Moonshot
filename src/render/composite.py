@@ -136,6 +136,7 @@ def generate_moon_image(
     waxing = moonphase.is_waxing(sun_ra, moon_ra)
     phase_name = moonphase.phase_name(illum_frac, waxing)
     terminator_angle = moonphase.terminator_angle(jd, lat, lon)
+    parallactic_angle = moonphase.parallactic_angle(jd, lat, lon)
 
     # ---- 5. Angular diameter ----
     # Moon's angular diameter = 2 * arctan(R_moon / distance)
@@ -173,6 +174,7 @@ def generate_moon_image(
         (tint_r, tint_g, tint_b),
         moon_radius_px,
         _moon_texture,
+        parallactic_angle_deg=parallactic_angle,
     )
 
     # Position on image — center the moon when using a narrow FOV (telephoto-style)
