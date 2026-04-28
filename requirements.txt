@@ -1,0 +1,5 @@
+Pillow>=10.0
+numpy>=1.24
+requests>=2.31
+geopy>=2.4
+timezonefinder>=6.5

@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.backends._legacy:_Backend"
+
+[project]
+name = "moonshot"
+version = "0.1.0"
+description = "Scientific moon phase & position image generator for any US location"
+requires-python = ">=3.12"
+dependencies = [
+    "Pillow>=10.0",
+    "numpy>=1.24",
+    "requests>=2.31",
+    "geopy>=2.4",
+    "timezonefinder>=6.5",
+]
+
+[project.scripts]
+moonshot = "src.main:main"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
