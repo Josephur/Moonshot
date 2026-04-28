@@ -24,3 +24,5 @@ output/*.png
 # OS
 .DS_Store
 Thumbs.db
+# Default output image
+moon.png
