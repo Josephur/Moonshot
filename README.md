@@ -17,11 +17,11 @@ Moonshots generated on **April 27, 2026** — a Waning Gibbous moon (∼89% illu
 
 | New York City (8:30pm EDT) | Los Angeles (8:30pm PDT) | Chicago (8:30pm CDT) |
 |---|---|---|
-| ![NYC](output/gallery/moonshot_new_york_city.png) | ![LA](output/gallery/moonshot_los_angeles.png) | ![Chicago](output/gallery/moonshot_chicago.png) |
+| ![NYC](https://raw.githubusercontent.com/Josephur/Moonshot/main/output/gallery/moonshot_new_york_city.png) | ![LA](https://raw.githubusercontent.com/Josephur/Moonshot/main/output/gallery/moonshot_los_angeles.png) | ![Chicago](https://raw.githubusercontent.com/Josephur/Moonshot/main/output/gallery/moonshot_chicago.png) |
 
 | Indianapolis (9:00pm EDT) | Miami (9:00pm EDT) | Denver (8:30pm MDT) |
 |---|---|---|
-| ![Indianapolis](output/gallery/moonshot_indianapolis.png) | ![Miami](output/gallery/moonshot_miami.png) | ![Denver](output/gallery/moonshot_denver.png) |
+| ![Indianapolis](https://raw.githubusercontent.com/Josephur/Moonshot/main/output/gallery/moonshot_indianapolis.png) | ![Miami](https://raw.githubusercontent.com/Josephur/Moonshot/main/output/gallery/moonshot_miami.png) | ![Denver](https://raw.githubusercontent.com/Josephur/Moonshot/main/output/gallery/moonshot_denver.png) |
 
 *Colors and moon positions vary by latitude, longitude, and atmospheric conditions.*
 
