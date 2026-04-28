@@ -11,13 +11,20 @@ Usage::
 """
 
 import argparse
+import os
 import sys
 from datetime import datetime, timezone, timedelta
+
+# Ensure the src/ directory is in sys.path so sibling packages resolve
+_PKG_DIR = os.path.dirname(__file__)
+if _PKG_DIR not in sys.path:
+    sys.path.insert(0, _PKG_DIR)
 from typing import Optional
 
 from config import Config, get_api_key
 from location.geocode import from_zip, from_city_state, from_lat_lon, Location
 from weather.provider import fetch_weather, default_weather
+from render.composite import generate_moon_image
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -193,6 +200,9 @@ def main():
         print("Warning: no timezone info; using current UTC time")
         utc_dt = now
 
+    if 'local_dt' not in dir():
+        local_dt = utc_dt
+
     # ---- 3. Compute Julian Date ----------------------------------------------
     jd = compute_julian_date(utc_dt)
 
@@ -220,8 +230,20 @@ def main():
     )
     output_path = args.output or "moon.png"
 
-    # The render module will be called here once it is built.
-    # render.render_moon(location, weather, config, jd, output_path)
+    # Call the render pipeline
+    img = generate_moon_image(
+        lat=location.lat, lon=location.lon,
+        city=location.city, state=location.state,
+        timezone_str=location.timezone_str,
+        dt=local_dt,
+        fov_deg=config.fov_deg,
+        image_w=config.image_width,
+        image_h=config.image_height,
+        weather_data=weather,
+        api_key=api_key or "",
+    )
+    img.save(output_path)
+    print(f"  Image:        {output_path} ({img.size[0]}x{img.size[1]})")
 
     # ---- 8. Print summary ----------------------------------------------------
     print("=" * 56)
@@ -242,8 +264,6 @@ def main():
     print(f"  Visibility:   {weather.visibility_km:.1f} km")
     print(f"  Wind:         {weather.wind_speed:.1f} m/s")
     print(f"  Output:       {output_path}")
-    print("=" * 56)
-    print("  (Render pipeline — coming soon)")
     print("=" * 56)
 
 
