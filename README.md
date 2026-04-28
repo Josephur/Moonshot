@@ -25,6 +25,10 @@ Moonshots generated on **April 28, 2026** — a Waning Gibbous moon (∼95% illu
 |---|---|---|
 | ![Indianapolis](https://raw.githubusercontent.com/Josephur/Moonshot/main/output/gallery/moonshot_indianapolis.png) | ![Miami](https://raw.githubusercontent.com/Josephur/Moonshot/main/output/gallery/moonshot_miami.png) | ![Denver](https://raw.githubusercontent.com/Josephur/Moonshot/main/output/gallery/moonshot_denver.png) |
 
+| Sydney, Australia (7:30pm AEST) | Buenos Aires, Argentina (7:30pm ART) | Cape Town, South Africa (7:30pm SAST) |
+|---|---|---|
+| ![Sydney](https://raw.githubusercontent.com/Josephur/Moonshot/main/output/gallery/moonshot_sydney.png) | ![Buenos Aires](https://raw.githubusercontent.com/Josephur/Moonshot/main/output/gallery/moonshot_buenos_aires.png) | ![Cape Town](https://raw.githubusercontent.com/Josephur/Moonshot/main/output/gallery/moonshot_cape_town.png) |
+
 *Colors and moon positions vary by latitude, longitude, and atmospheric conditions.*
 
 ## Quick Start
@@ -74,12 +78,18 @@ python -m src.main --help
 Whenever rendering code changes, regenerate the gallery before committing:
 
 ```bash
+# Northern Hemisphere (US)
 python -m src.main --zip 10001 --date 2026-04-28 --time 20:30 --output output/gallery/moonshot_new_york_city.png
 python -m src.main --zip 90001 --date 2026-04-28 --time 20:30 --output output/gallery/moonshot_los_angeles.png
 python -m src.main --city Chicago --state IL --date 2026-04-28 --time 20:30 --output output/gallery/moonshot_chicago.png
 python -m src.main --city Indianapolis --state IN --date 2026-04-28 --time 21:00 --output output/gallery/moonshot_indianapolis.png
 python -m src.main --city Miami --state FL --date 2026-04-28 --time 21:00 --output output/gallery/moonshot_miami.png
 python -m src.main --city Denver --state CO --date 2026-04-28 --time 20:30 --output output/gallery/moonshot_denver.png
+
+# Southern Hemisphere
+python -m src.main --city "Sydney" --country "Australia" --date 2026-04-28 --time 19:30 --output output/gallery/moonshot_sydney.png
+python -m src.main --city "Buenos Aires" --country "Argentina" --date 2026-04-28 --time 19:30 --output output/gallery/moonshot_buenos_aires.png
+python -m src.main --city "Cape Town" --country "South Africa" --date 2026-04-28 --time 19:30 --output output/gallery/moonshot_cape_town.png
 ```
 
 ## Technical Details
