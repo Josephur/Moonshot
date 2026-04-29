@@ -115,10 +115,13 @@ assert detected is not None, (
 |---|---|---|
 | V1 | Moon visibility | `"YES"` |
 | V2 | Horizon present | `"YES"` |
-| V3 | Night sky color | `"DEEP BLUE"`, `"BLACK"`, `"TWILIGHT ORANGE"` |
+| V3 | Sky type (night/twilight) | `"DARK"`, `"BLACK"`, `"BLUE"`, `"NIGHT"` |
 | V4 | Annotations present | `"YES"` |
-| V5 | Stars visible (deep night) | `"YES"` |
-| V6 | Wrong sky detection | Varies — see §6 |
+| V5 | Moon surface detail | `"YES"` (not a flat disk) |
+| V6 | Stars visible | `"YES"` (at 3am, deep night) |
+| V7 | Star brightness variation | `"YES"` (some brighter/larger than others) |
+| V8 | Sky color sanity | Varies — daytime at noon, night at 3am |
+| V9 | Earthshine (crescent moon) | `"YES"` (faint glow on dark side) |
 
 ---
 
@@ -637,3 +640,126 @@ class TestWrongSkyDetection:
 | **False positives** | Low for YES/NO, moderate for sky-color | V6 contradictions catch render pipeline bugs more reliably than V3 alone |
 | **Maintenance** | Low — only needs updating if prompt patterns change | New tests follow the same templates |
 | **Hardware** | Needs Ollama + moondream (4GB VRAM or CPU 8GB RAM) | Skip on machines without it; no hard dependency |
+
+---
+
+## 9. Weather Visual Test Methodology
+
+### Overview
+
+Weather visual tests span **two channels**:
+
+- **Channel A (moondream visual):** W1–W3 in `test_visual.py` — test only extremes (clear sky vs.
+  overcast) plus annotation text verification.  All behind `ollama_not_ready` marker.
+- **Channel B (unit):** W4–W5 in `test_weather.py` — test all non-visual weather data flow,
+  intermediate cloud levels, haze, and fog via mocking and direct pixel comparison.
+
+### W1 — TestClearSkyVisual (moondream)
+
+- Renders with `CLEAR_SKY` weather (0% clouds) at FOV=10
+- **Prompt:** `"Are there any clouds visible in this image? Answer YES or NO."`
+- **Expected:** `NO` (clear sky has no visible clouds)
+- **Purpose:** Verify that zero cloud cover produces a cloud-free image
+- **Fallback:** Uses `ask_with_retry` (2 retries)
+
+### W2 — TestOvercastVisual (moondream)
+
+- Renders with `OVERCAST` weather (100% clouds, 5km vis, 90% humidity) at FOV=10
+- **Prompt:** `"Are there visible clouds or a cloudy sky in this image? Answer YES or NO."`
+- **Expected:** `YES` (clouds are clearly visible)
+- **Purpose:** Verify that full cloud cover produces visible clouds; overcast may
+  partially obscure the moon
+- **Fallback:** Uses `ask_with_retry` (2 retries)
+
+### W3 — TestWeatherAnnotations (moondream)
+
+- Renders with `CLEAR_SKY` weather (default FOV)
+- **Test 3a:** Verify any text/overlay is visible
+  - **Prompt:** `"Is there any text or data overlay visible in this image? Answer YES or NO."`
+  - **Expected:** `YES`
+- **Test 3b:** Verify temperature number is visible
+  - **Prompt:** `"Does the image contain a temperature number (like '15°C' or '15C')? Answer YES or NO."`
+  - **Expected:** `YES`
+- **Purpose:** Verify weather data is rendered as readable annotations
+- **Fallback:** Uses `ask_with_retry` (2 retries)
+
+### W4 — TestWeatherDataPipeline (unit, no moondream)
+
+Tests the conditional overlay logic inside `generate_moon_image()` by mocking
+`render_clouds`, `render_haze`, and `render_fog` and verifying they are (or are not)
+called based on weather data thresholds:
+
+| Test | Cloud Cover | Visibility | Humidity | Expected Calls |
+|------|-------------|------------|----------|----------------|
+| Clear triggers haze only | 0% | 10 km | 50% | `render_haze` called; clouds/fog not called |
+| Cloud threshold | 50% | 50 km | 50% | `render_clouds` called |
+| Visibility threshold | 0% | 5 km | 50% | `render_haze` called |
+| Humidity threshold | 0% | 50 km | 90% | `render_fog` called |
+
+Pipeline logic being tested (from `composite.py`):
+
+```python
+if cloud_cover > 1.0:
+    current = render_clouds(current, cloud_cover, (moon_x, moon_y))
+
+if visibility_km < 20.0:
+    current = render_haze(current, visibility_km)
+
+if humidity > 80.0:
+    current = render_fog(current, humidity)
+```
+
+### W5 — TestWeatherOverlayUnits (unit, no moondream)
+
+Tests the overlay functions directly with PIL images and pixel-level comparison:
+
+| Test | Condition | Expected |
+|------|-----------|----------|
+| Zero clouds | `render_clouds(img, 0.0)` | Image byte-identical to input |
+| 100% clouds | `render_clouds(img, 100.0)` | Image pixels differ from input |
+| Haze identity | `render_haze(img, 50.0)` at 50km vis | Image unchanged |
+| Haze modifies | `render_haze(img, 1.0)` at 1km vis | Bottom rows modified more than top |
+| Fog threshold | `render_fog(img, 79.0)` below 80% | Image unchanged |
+| Fog threshold | `render_fog(img, 85.0)` above 80% | Image modified |
+
+### `render_weather_image()` Helper
+
+Located in `tests/conftest.py`.  Bypasses the CLI and real API by calling
+`generate_moon_image()` directly:
+
+```python
+def render_weather_image(output_name, weather_data, lat=39.77, lon=-86.16,
+                         date="2026-04-28", time="21:00", fov=None):
+```
+
+### Predefined Weather Scenarios
+
+| Constant | Cloud Cover | Visibility | Humidity | Conditions |
+|----------|-------------|------------|----------|------------|
+| `CLEAR_SKY` | 0% | 10 km | 50% | "clear sky" |
+| `OVERCAST` | 100% | 5 km | 90% | "overcast clouds" |
+| `LIGHT_CLOUDS` | 30% | 10 km | 50% | "scattered clouds" |
+| `FOGGY` | 0% | 1 km | 95% | "fog" |
+| `HAZY` | 30% | 3 km | 70% | "haze" |
+
+### Running Weather Unit Tests
+
+```bash
+# All unit tests (excluding visual)
+pytest tests/ -v --ignore=tests/test_visual.py
+
+# Weather-specific unit tests only
+pytest tests/test_weather.py -v -k "TestWeatherDataPipeline or TestWeatherOverlayUnits"
+
+# Include visual weather tests if moondream is available
+pytest tests/test_visual.py -v -k "TestClearSky or TestOvercast or TestWeatherAnnotations"
+```
+
+### Expected Answer Sets for Weather Visual Tests
+
+| Test ID | Test Name | Expected Answer(s) |
+|---------|-----------|-------------------|
+| W1 | No clouds in clear sky | `"NO"` |
+| W2 | Clouds visible in overcast | `"YES"` |
+| W3a | Annotations present | `"YES"` |
+| W3b | Temperature visible | `"YES"` |

@@ -14,9 +14,15 @@ from tests.conftest import (
     extract_choice,
     ollama_not_ready,
     render_image,
+    render_weather_image,
+    CLEAR_SKY,
+    OVERCAST,
 )
 
 pytestmark = ollama_not_ready
+
+# ── Acceptable answer sets ───────────────────────────────────
+YES_SET = {"YES"}
 
 
 # ── V1: Moon Visibility ─────────────────────────────────────
@@ -168,3 +174,56 @@ class TestEarthshine:
             "faint details visible on the shadowed side?"
         )
         assert check_yes(response), f"Earthshine not detected.\nModel: {response!r}"
+
+
+# ── W1: Clear Sky Visual ────────────────────────────────────
+class TestClearSkyVisual:
+    """W1: Clear weather (0% clouds) should have no visible clouds."""
+
+    def test_no_clouds_visible(self):
+        """Clear sky render should not show any cloud formations."""
+        path = render_weather_image("w1_clear.png", CLEAR_SKY, fov=10)
+        response = ask_with_retry(
+            path,
+            "Are there any clouds visible in this image? Answer YES or NO.",
+        )
+        assert not check_yes(response), (
+            f"Clouds detected in clear sky render.\nModel: {response!r}"
+        )
+
+
+# ── W2: Overcast Visual ────────────────────────────────────
+class TestOvercastVisual:
+    """W2: 100% cloud cover should show visible clouds."""
+
+    def test_clouds_visible(self):
+        """Overcast render should show obvious cloud cover."""
+        path = render_weather_image("w2_overcast.png", OVERCAST, fov=10)
+        response = ask_with_retry(
+            path,
+            "Are there visible clouds or a cloudy sky in this image? Answer YES or NO.",
+        )
+        assert check_yes(response), (
+            f"Clouds not detected in overcast render.\nModel: {response!r}"
+        )
+
+
+# ── W3: Weather Annotations ─────────────────────────────────
+class TestWeatherAnnotations:
+    """W3: Weather data annotations should be visible on the image."""
+
+    def test_clear_sky_text_visible(self):
+        """Annotation should contain 'clear sky' or descriptive weather text."""
+        path = render_weather_image("w3a_annotations.png", CLEAR_SKY)
+        response = ask_with_retry(path, "Is there any text or data overlay visible in this image? Answer YES or NO.")
+        assert check_yes(response), (
+            f"Weather annotations not detected.\nModel: {response!r}"
+        )
+
+    def test_temperature_visible(self):
+        """Annotation should show a temperature value."""
+        path = render_weather_image("w3b_temperature.png", CLEAR_SKY)
+        response = ask_with_retry(path, "Does the image contain a temperature number (like '15°C' or '15C')? Answer YES or NO.")
+        assert check_yes(response), (
+            f"Temperature text not detected in annotations.\nModel: {response!r}"
+        )
