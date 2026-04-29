@@ -227,3 +227,4 @@ class TestWeatherAnnotations:
         assert check_yes(response), (
             f"Temperature text not detected in annotations.\nModel: {response!r}"
         )
+
