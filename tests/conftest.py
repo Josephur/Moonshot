@@ -3,6 +3,7 @@
 import base64
 import logging
 import subprocess
+import sys as _sys
 from pathlib import Path
 
 import pytest
@@ -15,6 +16,13 @@ MOONSHOT_DIR = Path(__file__).resolve().parents[1]
 OLLAMA_URL = "http://127.0.0.1:11434/api/generate"
 OUTPUT_DIR = MOONSHOT_DIR / "output"
 OUTPUT_DIR.mkdir(exist_ok=True)
+
+# Ensure src/ is on sys.path for weather and render imports
+_SRC_PATH = str(MOONSHOT_DIR / "src")
+if _SRC_PATH not in _sys.path:
+    _sys.path.insert(0, _SRC_PATH)
+
+from weather.provider import WeatherData
 
 
 # ── Ollama availability check ─────────────────────────────────
@@ -117,4 +125,86 @@ def render_image(
 
     logger.info("Rendering: %s", " ".join(cmd))
     subprocess.run(cmd, cwd=MOONSHOT_DIR, capture_output=True, check=True, text=True)
+    return out_path
+
+
+# ── Predefined weather scenarios ────────────────────────────
+CLEAR_SKY = WeatherData(
+    temp_c=15.0, pressure_mbar=1013.0, humidity=50.0,
+    cloud_cover_pct=0.0, visibility_km=10.0,
+    conditions="clear sky", wind_speed=0.0,
+)
+OVERCAST = WeatherData(
+    temp_c=15.0, pressure_mbar=1013.0, humidity=90.0,
+    cloud_cover_pct=100.0, visibility_km=5.0,
+    conditions="overcast clouds", wind_speed=5.0,
+)
+LIGHT_CLOUDS = WeatherData(
+    temp_c=15.0, pressure_mbar=1013.0, humidity=50.0,
+    cloud_cover_pct=30.0, visibility_km=10.0,
+    conditions="scattered clouds", wind_speed=3.0,
+)
+FOGGY = WeatherData(
+    temp_c=15.0, pressure_mbar=1013.0, humidity=95.0,
+    cloud_cover_pct=0.0, visibility_km=1.0,
+    conditions="fog", wind_speed=2.0,
+)
+HAZY = WeatherData(
+    temp_c=15.0, pressure_mbar=1013.0, humidity=70.0,
+    cloud_cover_pct=30.0, visibility_km=3.0,
+    conditions="haze", wind_speed=3.0,
+)
+
+
+# ── Weather image rendering helper ──────────────────────────
+def render_weather_image(
+    output_name: str,
+    weather_data: WeatherData,
+    lat: float = 39.77,
+    lon: float = -86.16,
+    date: str = "2026-04-28",
+    time: str = "21:00",
+    fov: float | None = None,
+) -> Path:
+    """Render with specific weather, bypassing real API.
+
+    Calls ``generate_moon_image()`` directly with a known ``WeatherData``
+    instance, bypassing CLI argument parsing and real weather API.
+
+    Args:
+        output_name: Filename for the output image (e.g. "w1_clear.png").
+        weather_data: A ``WeatherData`` instance with desired weather.
+        lat: Latitude (default Indianapolis).
+        lon: Longitude (default Indianapolis).
+        date: Date string YYYY-MM-DD.
+        time: Time string HH:MM in 24-hour local.
+        fov: Field of view in degrees (default auto-calculated).
+
+    Returns:
+        Path to the saved output image.
+    """
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+
+    from render.composite import generate_moon_image
+
+    out_path = OUTPUT_DIR / output_name
+
+    year, month, day = map(int, date.split("-"))
+    hour, minute = map(int, time.split(":"))
+    tz = ZoneInfo("America/Indiana/Indianapolis")
+    local_dt = datetime(year, month, day, hour, minute, tzinfo=tz)
+
+    img = generate_moon_image(
+        lat=lat, lon=lon,
+        city="", state="", country="USA",
+        timezone_str="America/Indiana/Indianapolis",
+        dt=local_dt,
+        weather_data=weather_data,
+        image_w=1920, image_h=1080,
+        fov_deg=fov if fov is not None else 90.0,
+        api_key="",
+    )
+    img.save(out_path)
+    logger.info("Weather render saved: %s", out_path)
     return out_path

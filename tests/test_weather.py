@@ -7,7 +7,9 @@ import sys
 import os
 from unittest.mock import patch, MagicMock, call
 
+import numpy as np
 import pytest
+from PIL import Image
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
@@ -188,3 +190,186 @@ class TestFetchWeather:
         assert w.conditions == "unknown"
         assert w.pressure_mbar == 1013.0  # default
         assert w.humidity == 50.0  # default
+
+
+# ── W4: Weather Data Pipeline ────────────────────────────────
+class TestWeatherDataPipeline:
+    """W4: Weather data flows correctly to the render pipeline."""
+
+    @patch("render.composite.render_clouds")
+    @patch("render.composite.render_haze")
+    @patch("render.composite.render_fog")
+    def test_clear_activates_haze_only(self, mock_fog, mock_haze, mock_clouds):
+        """Clear sky (0% clouds, 10km vis) triggers haze but not fog or clouds."""
+        from datetime import datetime
+        from zoneinfo import ZoneInfo
+        from render.composite import generate_moon_image
+
+        w = WeatherData(
+            temp_c=15.0, pressure_mbar=1013.0, humidity=50.0,
+            cloud_cover_pct=0.0, visibility_km=10.0,
+            conditions="clear sky", wind_speed=0.0,
+        )
+        dt = datetime(2026, 4, 28, 21, 0, tzinfo=ZoneInfo("America/Indiana/Indianapolis"))
+        mock_clouds.return_value = Image.new("RGBA", (100, 100), (0, 0, 0, 0))
+        mock_haze.return_value = Image.new("RGBA", (100, 100), (0, 0, 0, 0))
+        mock_fog.return_value = Image.new("RGBA", (100, 100), (0, 0, 0, 0))
+        generate_moon_image(
+            lat=39.77, lon=-86.16, dt=dt, weather_data=w,
+            image_w=100, image_h=100, fov_deg=90.0, api_key="",
+        )
+        # 0% clouds → no cloud render; 10km <20 → haze called; 50% humidity → no fog
+        assert not mock_clouds.called, "render_clouds should NOT be called at 0% clouds"
+        assert mock_haze.called, "render_haze should be called at 10km visibility"
+        assert not mock_fog.called, "render_fog should NOT be called at 50% humidity"
+
+    @patch("render.composite.render_clouds")
+    @patch("render.composite.render_haze")
+    @patch("render.composite.render_fog")
+    def test_cloud_threshold_triggers_render_clouds(self, mock_fog, mock_haze, mock_clouds):
+        """Cloud cover >1% triggers render_clouds."""
+        from datetime import datetime
+        from zoneinfo import ZoneInfo
+        from render.composite import generate_moon_image
+
+        w = WeatherData(
+            temp_c=15.0, pressure_mbar=1013.0, humidity=50.0,
+            cloud_cover_pct=50.0, visibility_km=50.0,  # high vis to avoid haze
+            conditions="scattered clouds", wind_speed=3.0,
+        )
+        dt = datetime(2026, 4, 28, 21, 0, tzinfo=ZoneInfo("America/Indiana/Indianapolis"))
+        mock_clouds.return_value = Image.new("RGBA", (100, 100), (0, 0, 0, 0))
+        mock_haze.return_value = Image.new("RGBA", (100, 100), (0, 0, 0, 0))
+        mock_fog.return_value = Image.new("RGBA", (100, 100), (0, 0, 0, 0))
+        generate_moon_image(
+            lat=39.77, lon=-86.16, dt=dt, weather_data=w,
+            image_w=100, image_h=100, fov_deg=90.0, api_key="",
+        )
+        assert mock_clouds.called, "render_clouds should be called when cloud cover >1%"
+
+    @patch("render.composite.render_clouds")
+    @patch("render.composite.render_haze")
+    @patch("render.composite.render_fog")
+    def test_visibility_threshold_triggers_haze(self, mock_fog, mock_haze, mock_clouds):
+        """Visibility <20km triggers render_haze."""
+        from datetime import datetime
+        from zoneinfo import ZoneInfo
+        from render.composite import generate_moon_image
+
+        w = WeatherData(
+            temp_c=15.0, pressure_mbar=1013.0, humidity=50.0,
+            cloud_cover_pct=0.0, visibility_km=5.0,  # <20km → haze
+            conditions="haze", wind_speed=3.0,
+        )
+        dt = datetime(2026, 4, 28, 21, 0, tzinfo=ZoneInfo("America/Indiana/Indianapolis"))
+        mock_clouds.return_value = Image.new("RGBA", (100, 100), (0, 0, 0, 0))
+        mock_haze.return_value = Image.new("RGBA", (100, 100), (0, 0, 0, 0))
+        mock_fog.return_value = Image.new("RGBA", (100, 100), (0, 0, 0, 0))
+        generate_moon_image(
+            lat=39.77, lon=-86.16, dt=dt, weather_data=w,
+            image_w=100, image_h=100, fov_deg=90.0, api_key="",
+        )
+        assert mock_haze.called, "render_haze should be called when visibility <20km"
+
+    @patch("render.composite.render_clouds")
+    @patch("render.composite.render_haze")
+    @patch("render.composite.render_fog")
+    def test_humidity_threshold_triggers_fog(self, mock_fog, mock_haze, mock_clouds):
+        """Humidity >=80% triggers render_fog."""
+        from datetime import datetime
+        from zoneinfo import ZoneInfo
+        from render.composite import generate_moon_image
+
+        w = WeatherData(
+            temp_c=15.0, pressure_mbar=1013.0, humidity=90.0,
+            cloud_cover_pct=0.0, visibility_km=50.0,
+            conditions="fog", wind_speed=2.0,
+        )
+        dt = datetime(2026, 4, 28, 21, 0, tzinfo=ZoneInfo("America/Indiana/Indianapolis"))
+        mock_clouds.return_value = Image.new("RGBA", (100, 100), (0, 0, 0, 0))
+        mock_haze.return_value = Image.new("RGBA", (100, 100), (0, 0, 0, 0))
+        mock_fog.return_value = Image.new("RGBA", (100, 100), (0, 0, 0, 0))
+        generate_moon_image(
+            lat=39.77, lon=-86.16, dt=dt, weather_data=w,
+            image_w=100, image_h=100, fov_deg=90.0, api_key="",
+        )
+        assert mock_fog.called, "render_fog should be called when humidity >=80%"
+
+
+# ── W5: Weather Overlay Units ────────────────────────────────
+class TestWeatherOverlayUnits:
+    """W5: Direct pixel-level checks on weather overlay functions."""
+
+    def test_zero_clouds_unchanged(self):
+        """0% clouds → render_clouds returns image unchanged."""
+        from render.weather_overlay import render_clouds
+        img = Image.new("RGB", (50, 50), (100, 100, 100))
+        result = render_clouds(img, 0.0)
+        # Should be identity for <1% cloud
+        assert list(img.convert("RGBA").tobytes()) == list(result.tobytes()), (
+            "Image should be unchanged at 0% clouds"
+        )
+
+    def test_full_clouds_modifies_image(self):
+        """100% clouds → render_clouds modifies the image pixels."""
+        from render.weather_overlay import render_clouds
+        img = Image.new("RGB", (50, 50), (100, 100, 100))
+        result = render_clouds(img, 100.0)
+        original_data = list(img.convert("RGBA").tobytes())
+        result_data = list(result.tobytes())
+        assert original_data != result_data, (
+            "Image should be modified at 100% clouds"
+        )
+
+    def test_haze_identity_at_high_visibility(self):
+        """50km visibility → render_haze returns image nearly unchanged."""
+        from render.weather_overlay import render_haze
+        img = Image.new("RGB", (50, 50), (100, 100, 100))
+        result = render_haze(img, 50.0)
+        # At 50km, haze strength is 0, so image should be unchanged
+        original_data = list(img.convert("RGBA").tobytes())
+        result_data = list(result.tobytes())
+        assert original_data == result_data, (
+            "Image should be unchanged at 50km visibility"
+        )
+
+    def test_haze_modifies_at_low_visibility(self):
+        """1km visibility → render_haze modifies top rows more than bottom rows."""
+        from render.weather_overlay import render_haze
+        img = Image.new("RGB", (50, 50), (100, 100, 100))
+        result = render_haze(img, 1.0)
+
+        # Haze gradient goes top=1.0 → bottom=0.0, so top rows get more haze
+        original_pixel = (100, 100, 100)
+
+        top_pixel = result.getpixel((0, 0))
+        bot_pixel = result.getpixel((0, 49))
+
+        top_diff = sum(abs(top_pixel[i] - original_pixel[i]) for i in range(3))
+        bot_diff = sum(abs(bot_pixel[i] - original_pixel[i]) for i in range(3))
+
+        assert top_diff > 0, "Top of image should be modified by haze"
+        assert top_diff >= bot_diff, (
+            f"Top rows should be more modified than bottom rows "
+            f"(top: {top_diff}, bot: {bot_diff})"
+        )
+
+    def test_fog_threshold_at_80_percent(self):
+        """79% humidity → no fog; 85% humidity → fog modifies image."""
+        from render.weather_overlay import render_fog
+        img = Image.new("RGB", (50, 50), (100, 100, 100))
+
+        # Below threshold: 79% humidity
+        result_below = render_fog(img, 79.0)
+        original_data = list(img.convert("RGBA").tobytes())
+        below_data = list(result_below.tobytes())
+        assert original_data == below_data, (
+            "Image should be unchanged at 79% humidity"
+        )
+
+        # Above threshold: 85% humidity
+        result_above = render_fog(img, 85.0)
+        above_data = list(result_above.tobytes())
+        assert original_data != above_data, (
+            "Image should be modified at 85% humidity"
+        )
