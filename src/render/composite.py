@@ -186,70 +186,9 @@ def generate_moon_image(
         parallactic_angle_deg=parallactic_angle,
     )
 
-    # Composite moon onto sky
-    sky_rgba = sky.convert("RGBA")
-    # Calculate moon paste position (top-left corner of moon disk image)
-    paste_x = moon_x - moon_radius_px
-    paste_y = moon_y - moon_radius_px
-    sky_rgba.paste(moon_disk, (paste_x, paste_y), moon_disk)
-
-    # 7c. Horizon
-    horizon = horizon_line(sky_rgba, observer_height_m, sun_alt)
-
-    # 7d. Weather overlays
-    current = horizon.convert("RGBA")
-
-    cloud_cover = weather_data.cloud_cover_pct if weather_data else 0.0
-    visibility_km = weather_data.visibility_km if weather_data else 10.0
-
-    if cloud_cover > 1.0:
-        current = render_clouds(current, cloud_cover, (moon_x, moon_y))
-
-    if visibility_km < 20.0:
-        current = render_haze(current, visibility_km)
-
-    if humidity > 80.0:
-        current = render_fog(current, humidity)
-
-    # 7e. Annotations
-    loc_data = LocationData(city=city, state=state, country=country, lat=lat, lon=lon)
-    moon_data = MoonData(
-        illumination_pct=illum_frac * 100.0,
-        altitude_deg=moon_app_alt,
-        azimuth_deg=moon_az,
-        phase_name=phase_name,
-    )
-    w_data = WeatherAnnotationData(
-        temp_c=temp,
-        conditions=weather_data.conditions if weather_data else "",
-        wind_speed_ms=weather_data.wind_speed if weather_data else 0.0,
-        humidity_pct=humidity,
-    )
-    t_data = TimeData(
-        date_str=dt_utc.strftime("%Y-%m-%d"),
-        time_str=dt_utc.strftime("%H:%M"),
-        timezone_str=timezone_str or "UTC",
-    )
-    result = annotate_image(current, loc_data, moon_data, w_data, t_data)
-
-    return result
-
-
-def save_image(image: Image.Image, path: str) -> str:
-    """Save a PIL ``Image`` as a PNG file.
-
-    Creates parent directories if they do not exist.
-
-    Args:
-        image: The PIL ``Image`` to save.
-        path: Filesystem path for the output PNG.
-
-    Returns:
-        The absolute path of the saved file.
-    """
-    out_path = os.path.abspath(path)
-    out_dir = os.path.dirname(out_path)
-    if out_dir:
-        os.makedirs(out_dir, exist_ok=True)
-    image.save(out_path, "PNG")
-    return out_path
+    # Position on image — center the moon when using a narrow FOV (telephoto-style)
+    _center_moon = fov_deg < 20.0
+    moon_x, moon_y = moon_position_on_image(
+        moon_app_alt, moon_az, fov_deg, image_w, image_h,
+        center_on_moon=_center_moon,
+>>>>>>> origin/fix/moon-texture-rotation
