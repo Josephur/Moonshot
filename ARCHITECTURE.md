@@ -2,7 +2,7 @@
 
 ## Overview
 
-Moonshot generates scientifically-accurate PNG images of the moon as it would appear from any US location. It combines astronomical calculations, atmospheric physics, and current weather data to produce realistic horizon-to-sky renderings.
+Moonshot generates scientifically-accurate PNG images of the moon as it would appear from **anywhere on Earth**. It combines astronomical calculations, atmospheric physics, real star data, lunar surface textures, and current weather data to produce realistic horizon-to-sky renderings.
 
 ---
 
@@ -18,10 +18,15 @@ Moonshot/
 ├── src/
 │   ├── __init__.py
 │   ├── main.py                  # CLI entry point
+│   ├── config.py                # Configuration handling
+│   ├── data/                    # Bundled data files
+│   │   ├── hyg_v3_mag8.csv.gz   # HYG Database v3 star catalog (41K+ stars)
+│   │   ├── moon_texture.png     # 512×256 equirectangular moon surface texture
+│   │   └── README.md            # Data provenance
 │   ├── moon/
 │   │   ├── __init__.py
 │   │   ├── position.py          # Moon altitude/azimuth calculations
-│   │   ├── phase.py             # Moon phase, illumination, terminator
+│   │   ├── phase.py             # Moon phase, illumination, terminator, parallactic angle
 │   │   └── timeconv.py          # Julian date, sidereal time conversions
 │   ├── atmosphere/
 │   │   ├── __init__.py
@@ -30,31 +35,41 @@ Moonshot/
 │   │   └── airmass.py           # Air mass calculations
 │   ├── location/
 │   │   ├── __init__.py
-│   │   ├── geocode.py           # ZIP/City/State → lat/lon
+│   │   ├── geocode.py           # ZIP/City/State/Country → lat/lon (worldwide)
 │   │   └── timezone.py          # Timezone resolution from coords
 │   ├── weather/
 │   │   ├── __init__.py
-│   │   └── provider.py          # Weather API client
+│   │   └── provider.py          # Weather API client (One Call 3.0 + 2.5 fallback)
 │   ├── render/
 │   │   ├── __init__.py
-│   │   ├── sky.py               # Sky gradient generation
-│   │   ├── moon_render.py       # Moon disk with phase rendering
+│   │   ├── sky.py               # Sky gradient generation + real stars (HYG catalog)
+│   │   ├── stars.py             # Real star rendering pipeline
+│   │   ├── moon_render.py       # Moon disk with phase + texture mapping
+│   │   ├── moon_texture.py      # Moon surface texture loader & UV sampler
 │   │   ├── horizon.py           # Horizon line / terrain
 │   │   ├── weather_overlay.py   # Clouds, haze, fog
 │   │   ├── annotations.py       # Text/data overlay
 │   │   └── composite.py         # Assembles final image
-│   └── config.py                # Configuration handling
 ├── tests/
 │   ├── __init__.py
+│   ├── conftest.py              # Shared fixtures (Ollama, image rendering)
 │   ├── test_position.py
 │   ├── test_phase.py
 │   ├── test_timeconv.py
 │   ├── test_refraction.py
 │   ├── test_scattering.py
-│   ├── test_airmass.py
 │   ├── test_geocode.py
-│   ├── test_render.py
-│   └── test_integration.py
+│   ├── test_weather.py
+│   ├── test_integration.py
+│   ├── test_stars.py            # Star catalog, precession, proper motion, colour
+│   ├── test_moon_texture.py     # Texture loading, UV sampling, bilinear interpolation
+│   └── test_visual.py           # Visual regression tests (Ollama + moondream)
+├── docs/
+│   ├── design-real-moon-texture.md
+│   ├── DESIGN-international-support.md
+│   ├── VISUAL_TEST_ARCH.md
+│   └── VISUAL_TEST_SPEC.md
+├── .env                         # API keys (gitignored)
 └── output/                      # Generated images land here
 ```
 
@@ -162,18 +177,25 @@ Moonshot/
 
 ### 2.7 `location.geocode` — Location Resolver
 
-**Responsibility:** Convert ZIP codes, city/state strings, or lat/lon to standardized coordinates.
+**Responsibility:** Convert ZIP/postal codes, city/state/country strings, or lat/lon to standardized coordinates.
 
 **Approach:**
-- Use `photon` (free Geocoding API based on OSM) or `geopy` with Nominatim
-- ZIP code lookup via free Open Census Data API or Zippopotam.us
-- Local fallback: bundled ZIP code → lat/lon database for offline use
+- Use `geopy` with Nominatim (free geocoding based on OpenStreetMap data)
+- Supports worldwide locations:
+  - `from_zip(zip_code, country)` — ZIP/postal codes with optional country
+  - `from_city_state(city, state, country)` — US defaults to "USA" if no country
+  - `from_city_country(city, country)` — Direct city+country lookup
+  - `from_lat_lon(lat, lon)` — Validate and resolve timezone
+- Priority: `--zip` > `--city --country` > `--city --state` > `--lat --lon`
+- When `--state` is given without `--country`, defaults to USA (backward compatible)
+- When `--city` is given alone, resolves globally
 
 **Key Functions:**
-- `from_zip(zip_code) → (lat, lon, city, state)`
-- `from_city_state(city, state) → (lat, lon)`
-- `from_lat_lon(lat, lon) → (lat, lon)` — Validate and normalize
-- `is_valid_us_zip(zip_code) → bool`
+- `from_zip(zip_code, country="USA") → Location`
+- `from_city_state(city, state, country="USA") → Location`
+- `from_city_country(city, country) → Location`
+- `from_lat_lon(lat, lon) → Location` — Validate and normalize
+- `is_valid_us_zip(zip_code) → bool` — Utility for US ZIP format validation
 
 ### 2.8 `location.timezone` — Timezone Resolution
 
@@ -189,50 +211,63 @@ Moonshot/
 
 **Responsibility:** Fetch current weather for the observed location.
 
-**Approach:** OpenWeatherMap OneCall API (free tier).
-
-**Output:**
-- `temp_c: float`
-- `pressure_mbar: float`
-- `humidity: int` — percentage
-- `cloud_cover: int` — percentage
-- `visibility_km: float`
-- `conditions: str` — description
-- `weather_icon_code: str`
-- `wind_speed: float`
+**Approach:** OpenWeatherMap One Call API 3.0 (primary), with automatic fallback to the free 2.5/weather endpoint. API key loaded from `MOONSHOT_WEATHER_API_KEY` env var or `.env` file.
 
 **Key Functions:**
-- `fetch_weather(lat, lon, api_key) → WeatherData`
-- `WeatherData` — NamedTuple/dataclass with all fields above
+- `fetch_weather(lat, lon, api_key) → WeatherData or None`
+- `default_weather() → WeatherData` — Fallback with sensible defaults
+
+**WeatherData Fields:**
+- `temp_c: float` — Temperature in Celsius
+- `pressure_mbar: float` — Atmospheric pressure in hPa
+- `humidity: float` — Relative humidity percentage
+- `cloud_cover_pct: float` — Cloud cover percentage
+- `visibility_km: float` — Visibility in kilometers
+- `conditions: str` — Human-readable description (e.g. "scattered clouds")
+- `wind_speed: float` — Wind speed in m/s
 
 ### 2.10 `render.sky` — Sky Gradient Rendering
 
-**Responsibility:** Generate the sky background with realistic color gradient.
+**Responsibility:** Generate the sky background with realistic color gradient and real star field.
 
 **Algorithm:**
 - Daytime: blue sky gradient based on solar altitude and Rayleigh scattering
 - Sunset/twilight: sunset colors (red/orange/purple) based on solar depression angle
-- Nighttime: deep blue-black gradient with LRGB color temperature shift
-- If moon is present: subtle sky glow near the moon's position (atmospheric backscatter)
+- Nighttime: deep blue-black gradient
+- Stars: rendered from the **HYG Database v3** (41K+ stars, Vmag < 8.0) via the full pipeline in `stars.py`:
+  - Proper motion correction from J2000.0
+  - IAU 1976 precession to observation epoch
+  - Equatorial → horizontal coordinate transform (vectorised)
+  - Altitude, FOV, and magnitude filtering (top 2000 brightest)
+  - Atmospheric extinction
+  - Spectral color from B-V index → RGB
+  - Magnitude-scaled brightness and size (1-3px)
+- Moon glow: radial Gaussian gradient centered at the moon's actual pixel position (via `moon_px`/`moon_py` params)
 
 **Key Functions:**
-- `sky_gradient(sun_altitude, moon_altitude, image_width, image_height) → Image`
+- `sky_gradient(sun_alt, moon_alt, width, height, lat, lon, jd, fov_deg, moon_px, moon_py) → Image`
 
 ### 2.11 `render.moon_render` — Moon Disk Rendering
 
-**Responsibility:** Render the moon disk with correct phase, size, and color.
+**Responsibility:** Render the moon disk with correct phase, size, texture, and color.
 
 **Algorithm:**
 - Calculate angular diameter of moon from distance (~0.49° to ~0.56° apparent)
 - Render circle with correct number of pixels based on image FOV
-- Phase rendering: dark side vs illuminated side with terminator line
+- Phase rendering: dark side vs illuminated side with terminator line and smooth 4px blend
+- **Texture mapping:** orthographic projection of 512×256 equirectangular lunar surface texture onto the moon disk, with bilinear-interpolated UV sampling
+- **Parallactic rotation:** texture rotated by the parallactic angle so surface features appear correctly oriented for the observer's latitude (fixes southern hemisphere upside-down appearance)
+- **Earthshine:** dark side illuminated at 0.015 × (1 − illumination) with blue-green tint (creates "old moon in new moon's arms" effect)
 - Apply color tint from atmospheric scattering calculations
-- Add subtle brightness gradient (limb darkening on illuminated side)
+- Limb darkening (brightness gradient on illuminated side)
+- Graceful fallback to flat-color disk if texture file is missing
 
 **Key Functions:**
 - `moon_size_pixels(angular_diameter, fov_deg, image_width) → int`
-- `render_moon_disk(phase, terminator_angle, tint_color, pixel_radius) → Image`
-- `moon_position_on_image(altitude, azimuth, viewer_direction, image_w, image_h, fov) → (x, y)`
+- `render_moon_disk(illumination, terminator_angle, tint_color, pixel_radius) → Image`
+- `render_moon_disk_with_texture(illumination, terminator_angle, tint_color, pixel_radius, texture, parallactic_angle_deg) → Image`
+- `moon_position_on_image(altitude, azimuth, fov_deg, image_w, image_h, center_on_moon) → (x, y)`
+- `moon_position_on_image_with_direction(altitude, azimuth, viewer_azimuth, fov_deg, image_w, image_h) → (x, y)`
 
 ### 2.12 `render.horizon` — Horizon Rendering
 
@@ -288,8 +323,8 @@ Moonshot/
 
 **Interface:**
 ```
-moonshot --zip 46201 | --city "Indianapolis" --state "IN" | --lat 39.7 --lon -86.2
-         [--date 2026-04-27] [--time 21:00] [--fov 90]
+moonshot --zip 46201 | --city "Paris" --country "France" | --lat 39.7 --lon -86.2
+         [--date 2026-04-28] [--time 21:00] [--fov 90]
          [--width 1920] [--height 1080]
          [--output moon.png]
          [--weather-api-key KEY]
@@ -304,7 +339,7 @@ User Input (location, time, options)
     │
     ▼
 ┌─────────────────┐
-│ location.geocode │──→ (lat, lon, city, state)
+│ location.geocode │──→ (lat, lon, city, state, country)
 └────────┬────────┘
          │
          ▼
@@ -317,31 +352,27 @@ User Input (location, time, options)
                     ▼               ▼               ▼
         ┌─────────────────┐ ┌──────────┐ ┌──────────────────┐
         │ moon.position    │ │ weather  │ │ moon.phase       │
-        │ moon.timeconv    │ │ provider │ │ (uses sun pos)   │
-        └────────┬────────┘ └─────┬────┘ └────────┬─────────┘
-                 │                │               │
-                 ▼                ▼               ▼
-    ┌──────────────────────┐ ┌──────────┐ ┌──────────────────┐
-    │ atmosphere.refraction │ │ temp,    │ │ illumination     │
-    │ atmosphere.scattering │ │ pressure │ │ phase name       │
-    │ atmosphere.airmass    │ │ humidity │ │ terminator angle │
-    └────────┬─────────────┘ │ cloud    │ └────────┬─────────┘
-             │               │ vis.     │          │
-             ▼               └────┬─────┘          │
-    ┌─────────────────────┐       │                │
-    │ Corrected altitude  │       │                │
-    │ Azimuth             │       │                │
-    │ Apparent magnitude  │       │                │
-    │ Color tint (RGB)    │       │                │
-    └────────┬────────────┘       │                │
-             │                    │                │
-             ▼                    ▼                ▼
+        │ moon.timeconv    │ │ provider │ │ (includes        │
+        └────────┬────────┘ │ OneCall  │ │  parallactic     │
+                 │          │ 3.0/2.5  │ │  angle for       │
+                 ▼          └────┬─────┘ │  texture rot.)   │
+    ┌──────────────────────┐     │       └────────┬─────────┘
+    │ atmosphere.refraction │     │               │
+    │ atmosphere.scattering │     │               │
+    │ atmosphere.airmass    │     │               │
+    └────────┬─────────────┘     │               │
+             │                   │               │
+             ▼                   ▼               ▼
     ┌─────────────────────────────────────────────────────┐
     │                   render.composite                  │
-    │  ┌──────┐  ┌──────┐  ┌──────┐  ┌──────┐  ┌──────┐ │
-    │  │ sky  │  │ moon │  │horiz.│  │wthr  │  │annot.│ │
-    │  │grad. │  │render│  │render│  │over. │  │      │ │
-    │  └──────┘  └──────┘  └──────┘  └──────┘  └──────┘ │
+    │  ┌──────┐ ┌──────┐ ┌──────────┐ ┌──────┐ ┌──────┐ │
+    │  │ sky  │ │ stars│ │ moon     │ │horiz.│ │wthr  │ │
+    │  │grad. │ │(HYG) │ │(textured)│ │render│ │over. │ │
+    │  │+glow │ │      │ │+earthsh. │ │      │ │      │ │
+    │  └──────┘ └──────┘ └──────────┘ └──────┘ └──────┘ │
+    │  ┌──────────────────────────────────────────────┐  │
+    │  │              annotations                     │  │
+    │  └──────────────────────────────────────────────┘  │
     └─────────────────────────────────────────────────────┘
                               │
                               ▼
@@ -372,21 +403,27 @@ User Input (location, time, options)
 
 ## 5. Testing Strategy
 
-- **Unit tests** for every public function in:
-  - `moon.position`, `moon.phase`, `moon.timeconv`
-  - `atmosphere.refraction`, `atmosphere.scattering`, `atmosphere.airmass`
-  - `location.geocode`, `location.timezone`
-  - `render.sky`, `render.moon_render`, `render.horizon`, `render.annotations`
-- **Mocking** for weather API and geocoding API calls (no network in tests)
+- **Unit tests** for every public function across all modules (135+ tests total):
+  - `moon.position`, `moon.phase`, `moon.timeconv` — Position and phase calculations
+  - `atmosphere.refraction`, `atmosphere.scattering`, `atmosphere.airmass` — Atmospheric physics
+  - `location.geocode` — Location resolution (worldwide, with mocked Nominatim)
+  - `weather.provider` — Weather fetching with mocked endpoints (One Call 3.0 + 2.5 fallback)
+  - `render.stars` — Star catalog loading, proper motion, precession, B-V→RGB colour mapping
+  - `render.moon_texture` — Texture loading, UV sampling, bilinear interpolation, edge cases
+- **Mocking** for weather API (requests) and geocoding API (Nominatim) — no network in tests
 - **Fixture data** for known moon positions (cross-checked against JPL Horizons or USNO)
-  - Test against known values for specific dates/locations
-  - e.g., Full Moon on 2026-04-27, altitude at Indianapolis at 21:00 EDT
-- **Image validation** tests:
-  - Output is valid PNG
-  - Image dimensions correct
-  - Moon center is within expected pixel region
-  - Colors are within valid ranges
-- **Integration test** end-to-end: mock input → PNG output exists
+- **Visual regression tests** with local Ollama + moondream vision model:
+  - Moon visibility (FOV=10)
+  - Moon surface detail (texture visible, not a solid disk)
+  - Star visibility at 3am
+  - Star brightness variation
+  - Sky type detection (day/night)
+  - Earthshine on crescent moon
+  - Constellation patterns (stars not randomly/grid-arranged)
+  - Daytime vs night contradiction checks
+  - Horizon presence
+  - Auto-skipped when Ollama/moondream is unavailable
+- **Integration test** end-to-end: lat/lon input → PNG output exists
 
 ---
 
@@ -395,17 +432,20 @@ User Input (location, time, options)
 - **Provider:** OpenWeatherMap OneCall 3.0 (free tier: 1000 calls/day)
 - **Key management:** Read from environment variable `MOONSHOT_WEATHER_API_KEY` or `.env` file
 - **Graceful degradation:** If API key not set or API unavailable, proceed with clear weather defaults (temperature: 15°C, pressure: 1013mbar, humidity: 50%, cloud: 0%, visibility: 10km)
+- **Dual-endpoint fallback:** tries One Call 3.0 first, falls back to free 2.5/weather on 401
 
 ---
 
 ## 7. Location Resolution Strategy
 
 1. **Priority order:**
-   - Direct lat/lon if provided
-   - ZIP code (5 digits) → geocode lookup
-   - City/State → geocode lookup
-2. **Caching:** Cache geocode results in memory to reduce API calls during a session
-3. **Fallback:** If all lookups fail, default to Indianapolis, IN
+   - `--zip` — with optional `--country` (defaults to USA)
+   - `--city --country` — direct city+country lookup
+   - `--city --state` — with optional `--country` (defaults to USA when state given)
+   - `--city` alone — global resolution (no country assumed)
+   - `--lat --lon` — direct coordinates
+2. **Backward compatibility:** All existing US commands (`--zip 46201`, `--city Indianapolis --state IN`) produce identical results
+3. **Fallback:** If all lookups fail, print error and exit with code 1
 
 ---
 
