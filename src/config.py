@@ -15,14 +15,35 @@ ENV_API_KEY = "MOONSHOT_WEATHER_API_KEY"
 
 
 def get_api_key() -> Optional[str]:
-    """Read the OpenWeatherMap API key from the environment.
+    """Read the OpenWeatherMap API key from the environment or .env file.
 
-    Checks the ``MOONSHOT_WEATHER_API_KEY`` environment variable.
+    Checks the ``MOONSHOT_WEATHER_API_KEY`` environment variable first,
+    then falls back to reading from a ``.env`` file in the project root
+    (if present).
 
     Returns:
-        The API key string or None if the variable is not set.
+        The API key string or None if not found.
     """
-    return os.environ.get(ENV_API_KEY)
+    # Check environment first
+    key = os.environ.get(ENV_API_KEY)
+    if key:
+        return key
+
+    # Fallback: try loading from .env file
+    _env_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), '.env')
+    try:
+        with open(_env_path) as f:
+            for line in f:
+                line = line.strip()
+                if not line or line.startswith('#') or '=' not in line:
+                    continue
+                k, v = line.split('=', 1)
+                if k.strip() == ENV_API_KEY:
+                    return v.strip()
+    except (FileNotFoundError, OSError):
+        pass
+
+    return None
 
 
 @dataclass
