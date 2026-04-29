@@ -186,13 +186,6 @@ def generate_moon_image(
         parallactic_angle_deg=parallactic_angle,
     )
 
-    # Position on image — center the moon when using a narrow FOV (telephoto-style)
-    _center_moon = fov_deg < 20.0
-    moon_x, moon_y = moon_position_on_image(
-        moon_app_alt, moon_az, fov_deg, image_w, image_h,
-        center_on_moon=_center_moon,
-    )
-
     # Composite moon onto sky
     sky_rgba = sky.convert("RGBA")
     # Calculate moon paste position (top-left corner of moon disk image)
