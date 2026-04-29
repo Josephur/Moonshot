@@ -80,6 +80,7 @@ Whenever rendering code changes, regenerate the gallery before committing:
 ```bash
 # Northern Hemisphere (US)
 
+
 python -m src.main --zip 10001 --date 2026-04-28 --time 20:30 --output output/gallery/moonshot_new_york_city.png
 python -m src.main --zip 90001 --date 2026-04-28 --time 20:30 --output output/gallery/moonshot_los_angeles.png
 python -m src.main --city Chicago --state IL --date 2026-04-28 --time 20:30 --output output/gallery/moonshot_chicago.png
@@ -91,6 +92,7 @@ python -m src.main --city Denver --state CO --date 2026-04-28 --time 20:30 --out
 python -m src.main --city "Sydney" --country "Australia" --date 2026-04-28 --time 19:30 --output output/gallery/moonshot_sydney.png
 python -m src.main --city "Buenos Aires" --country "Argentina" --date 2026-04-28 --time 19:30 --output output/gallery/moonshot_buenos_aires.png
 python -m src.main --city "Cape Town" --country "South Africa" --date 2026-04-28 --time 19:30 --output output/gallery/moonshot_cape_town.png
+
 
 ```
 
