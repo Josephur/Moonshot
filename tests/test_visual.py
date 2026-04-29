@@ -228,3 +228,4 @@ class TestWeatherAnnotations:
             f"Temperature text not detected in annotations.\nModel: {response!r}"
         )
 
+

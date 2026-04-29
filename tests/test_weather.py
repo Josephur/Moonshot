@@ -191,3 +191,4 @@ class TestFetchWeather:
         assert w.pressure_mbar == 1013.0  # default
         assert w.humidity == 50.0  # default
 
+
