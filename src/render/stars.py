@@ -5,6 +5,7 @@ Loads the filtered HYG Database v3 (Vmag < 8.0) and renders stars onto
 the sky background using a fully vectorised numpy pipeline:
 
   1. Load catalog (lazy cached)
+  1b. Convert RA from hours to degrees (HYG convention: ×15)
   2. Proper-motion correction (J2000 → observation epoch)
   3. Precession (IAU 1976, J2000.0 → observation epoch)
   4. Equatorial → horizontal (vectorised)
@@ -55,6 +56,10 @@ def load_catalog() -> dict:
     Returns a dict with numpy arrays:
         id, ra, dec, mag, ci, pmra, pmdec
     all as float64 arrays.
+
+    Note: RA is stored in decimal hours (0-24) per HYG convention.
+    Callers must multiply by 15 to convert to degrees before
+    passing to coordinate transforms.
     """
     global _CATALOG
     if _CATALOG is not None:
@@ -387,6 +392,7 @@ def render_stars_to_sky(
     The full pipeline:
 
     1. Load catalog (lazy cached)
+    1b. Convert RA from decimal hours to degrees (×15)
     2. Proper-motion correct RA/Dec from J2000.0 to observation epoch
     3. Precess coordinates from J2000.0 to observation epoch
     4. Convert equatorial to horizontal (altitude, azimuth)
@@ -412,8 +418,12 @@ def render_stars_to_sky(
     cat = load_catalog()
     N = len(cat["ra"])
 
+    # HYG catalog stores RA in decimal hours (0-24); convert to degrees (0-360)
+    # before passing to proper-motion, precession, and coordinate transforms.
+    ra_deg = cat["ra"] * 15.0
+
     # 2. Proper motion
-    ra_pm, dec_pm = proper_motion(cat["ra"], cat["dec"],
+    ra_pm, dec_pm = proper_motion(ra_deg, cat["dec"],
                                   cat["pmra"], cat["pmdec"], jd)
 
     # 3. Precession J2000.0 → observation epoch

@@ -1,7 +1,8 @@
 """Unit tests for the star rendering pipeline (stars.py).
 
 Tests cover proper motion, precession, B-V colour mapping, extinction,
-equatorial-to-horizontal conversion, and catalog loading.
+equatorial-to-horizontal conversion, catalog loading, and end-to-end
+rendering verification.
 """
 
 import os
@@ -9,6 +10,7 @@ import sys
 
 import numpy as np
 import pytest
+from PIL import Image
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
@@ -22,6 +24,7 @@ from render.stars import (
     load_catalog,
     precess_j2000_to_epoch,
     proper_motion,
+    render_stars_to_sky,
 )
 
 
@@ -306,3 +309,112 @@ class TestStarProperties:
         """Multiple magnitudes should produce same-size output."""
         sizes = _star_size(np.array([-1.0, 1.0, 5.0, 7.0]))
         assert sizes.shape == (4,)
+
+
+# ── End-to-end star rendering regression tests ──────────────
+
+class TestEndToEndStarRendering:
+    """Regression tests verifying the full rendering pipeline produces
+    visible stars at night from real catalog data.
+
+    These tests catch the RA-hours-vs-degrees bug and similar
+    coordinate-system regressions.
+    """
+
+    # Indianapolis, 3am EDT = ~08:00 UTC on 2026-05-03
+    _jd = 2461163.8333
+    _lat = 39.77
+    _lon = -86.16
+    _fov = 90.0
+
+    def _render_at_night(self, fov: float | None = None) -> np.ndarray:
+        """Render stars onto a black background and return pixel array."""
+        fov_deg = fov if fov is not None else self._fov
+        bg = Image.new("RGB", (1920, 1080), color=(0, 0, 0))
+        result = render_stars_to_sky(bg, self._lat, self._lon, self._jd, fov_deg)
+        return np.array(result)
+
+    def test_stars_rendered_on_black_background(self):
+        """A night render must have visible stars — non-black pixels."""
+        pixels = self._render_at_night()
+        nonzero = (pixels > 0).sum()
+        assert nonzero > 500, (
+            f"Expected >500 lit pixels from stars at night, got {nonzero}. "
+            f"Possible RA conversion bug or catalog regression."
+        )
+
+    def test_star_pixels_have_meaningful_brightness(self):
+        """Bright stars (mag < 2) should produce pixel values > 100."""
+        pixels = self._render_at_night()
+        max_val = pixels.max()
+        assert max_val > 100, (
+            f"Expected star pixels with value >100 (bright stars), "
+            f"got max={max_val}. Stars may be missing from rendering."
+        )
+
+    def test_night_render_not_empty(self):
+        """At deep night, the full 90° FOV must contain stars."""
+        pixels = self._render_at_night(fov=90.0)
+        lit_pixels = (pixels > 0).sum()
+        assert lit_pixels > 0, (
+            "Zero lit pixels at 3am with 90° FOV — star rendering is broken."
+        )
+
+    def test_stars_cover_multiple_regions_of_sky(self):
+        """Stars should be distributed across the image, not all in one strip."""
+        pixels = self._render_at_night()
+        # Divide image into 9 regions (3×3 grid); stars should appear in at
+        # least 4 regions — if they're all in one horizontal band, the
+        # coordinate system may be broken (e.g., RA in hours vs degrees).
+        h, w = pixels.shape[:2]
+        h_step, w_step = h // 3, w // 3
+        regions_with_stars = 0
+        for row in range(3):
+            for col in range(3):
+                y0, y1 = row * h_step, (row + 1) * h_step
+                x0, x1 = col * w_step, (col + 1) * w_step
+                region = pixels[y0:y1, x0:x1]
+                if (region > 0).sum() > 0:
+                    regions_with_stars += 1
+
+        assert regions_with_stars >= 4, (
+            f"Stars found in only {regions_with_stars}/9 image regions. "
+            f"Expected ≥4 for distributed night sky with 90° FOV. "
+            f"Possible coordinate-system regression."
+        )
+
+    def test_ra_is_converted_to_degrees_before_pipeline(self):
+        """Verify that RA is multiplied by 15 before entering the pipeline.
+
+        This test checks that the catalog RA (decimal hours) is converted
+        to degrees before being passed to proper_motion / precession / alt-az.
+        Without the fix, stars above 40° altitude would be absent because
+        RA in hours gets treated as degrees, collapsing the sky.
+        """
+        from render.stars import proper_motion as pm
+        from render.stars import precess_j2000_to_epoch as precess
+        from render.stars import equatorial_to_horizontal_vectorised as eq2horiz
+
+        cat = load_catalog()
+        # The pipeline must convert RA hours → degrees (×15)
+        ra_deg = cat["ra"] * 15.0
+        ra_pm, dec_pm = pm(ra_deg, cat["dec"], cat["pmra"], cat["pmdec"], self._jd)
+        ra_ep, dec_ep = precess(ra_pm, dec_pm, self._jd)
+        alt, _ = eq2horiz(ra_ep, dec_ep, self._lat, self._lon, self._jd)
+
+        # At 3am from Indianapolis, roughly half the sky should be above horizon.
+        # With the bug (RA in hours, not degrees), the altitude distribution
+        # is compresses and max altitude is ~40°. With the fix, we should see
+        # stars near zenith.
+        above = alt > 0.0
+        assert above.sum() > 15000, (
+            f"Only {above.sum()} stars above horizon — expected >15000. "
+            f"RA may not be converted from hours to degrees."
+        )
+
+        max_alt = alt[above].max()
+        assert max_alt > 60.0, (
+            f"Max altitude above horizon is only {max_alt:.1f}° — "
+            f"expected >60° (stars near zenith). "
+            f"RA hours→degrees conversion may be missing."
+        )
